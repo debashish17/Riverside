@@ -211,6 +211,15 @@ export const sessionAPI = {
     }
   },
 
+  async smartLeaveSession(sessionId) {
+    try {
+      const response = await api.post('/api/session/smart-leave', { sessionId });
+      return { success: true, data: response.data, action: response.data.action };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'Failed to leave session' };
+    }
+  },
+
 
   async getAllSessions() {
     try {

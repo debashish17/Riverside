@@ -29,6 +29,7 @@ const SessionRoom = () => {
   const recordedChunksRef = React.useRef<Blob[]>([]);
   const streamRef = React.useRef<MediaStream | null>(null);
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const sessionRef = React.useRef<Session | null>(null);
   const { user } = useSelector((state: RootState) => state.auth);
   
   interface Participant {
@@ -70,6 +71,7 @@ const SessionRoom = () => {
 
       if (result.success) {
         setSession(result.data);
+        sessionRef.current = result.data; // Store in ref for cleanup access
         setParticipants(result.data?.participants || []);
         console.log('✅ Session loaded:', result.data?.name || `Session ${sessionId}`);
       } else {
@@ -117,68 +119,117 @@ const SessionRoom = () => {
 
     if (!socket.connected) socket.connect();
     socket.emit('join-room', { roomId: sessionId, userId: user?.id || user?.username });
-    socket.on('participants-update', setParticipants);
+
+    // Handle real-time participant updates
+    socket.on('participants-update', (updatedParticipants) => {
+      console.log('👥 Participants updated:', updatedParticipants);
+      setParticipants(updatedParticipants);
+    });
+
+    // Handle user joined event
+    socket.on('user-joined', (data) => {
+      console.log('👤 User joined:', data);
+    });
+
+    // Handle user left event
+    socket.on('user-left', (data) => {
+      console.log('👋 User left:', data);
+    });
+
+    // Handle session termination by owner
+    socket.on('session-terminated', (data) => {
+      console.log('🔴 Session terminated:', data);
+      alert(data.message || 'Session has been ended by the owner');
+      navigate('/dashboard');
+    });
+
     socket.on('message', (msg) => setMessages((prev) => [...prev, msg]));
 
     return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-        mediaRecorderRef.current.onstop = async () => {
-          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+      const uploadRecording = async () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
 
-          // Use chunked upload for files larger than 10MB, otherwise use regular upload
-          const useChunkedUpload = blob.size > 10 * 1024 * 1024; // 10MB threshold
-
-          try {
-            setIsUploading(true);
-            console.log(`📤 Uploading recording (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
-
-            if (useChunkedUpload) {
-              // Use chunked upload for large files
-              const result = await recordingAPI.uploadRecordingChunked(
-                blob,
-                {
-                  sessionId: sessionId || '',
-                  sessionName: session?.name || `Session ${sessionId || 'unknown'}`
-                },
-                (progress, current, total) => {
-                  setUploadProgress(progress);
-                  console.log(`📤 Upload progress: ${progress}% (chunk ${current}/${total})`);
-                }
-              );
-
-              if (result.success) {
-                console.log('✅ Recording uploaded successfully (chunked)');
-              } else {
-                console.error('❌ Chunked upload failed:', result.error);
-              }
-            } else {
-              // Use direct upload for smaller files
-              const formData = new FormData();
-              formData.append('recording', blob, `session-${sessionId || 'unknown'}-${Date.now()}.webm`);
-              formData.append('sessionId', sessionId || '');
-              formData.append('sessionName', session?.name || `Session ${sessionId || 'unknown'}`);
-
-              const response = await fetch('/api/recordings/upload', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-                body: formData
-              });
-
-              if (response.ok) {
-                console.log('✅ Recording uploaded successfully (direct)');
-              } else {
-                console.error('❌ Direct upload failed:', await response.text());
-              }
+          // Wait for recorder to stop and then upload
+          await new Promise<void>((resolve) => {
+            if (!mediaRecorderRef.current) {
+              resolve();
+              return;
             }
-          } catch (error) {
-            console.error('❌ Failed to upload recording:', error);
-          } finally {
-            setIsUploading(false);
-            setUploadProgress(0);
-          }
-        };
-      }
+
+            mediaRecorderRef.current.onstop = async () => {
+              const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+
+              if (blob.size === 0) {
+                console.log('⚠️ No recording data to upload');
+                resolve();
+                return;
+              }
+
+              // Use sessionRef to get session data (avoids closure issues)
+              const currentSession = sessionRef.current;
+              const currentSessionId = sessionId || currentSession?.id;
+              const currentSessionName = currentSession?.name || `Session ${currentSessionId || 'unknown'}`;
+
+              // Use chunked upload for files larger than 10MB, otherwise use regular upload
+              const useChunkedUpload = blob.size > 10 * 1024 * 1024; // 10MB threshold
+
+              try {
+                setIsUploading(true);
+                console.log(`📤 Uploading recording (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
+
+                if (useChunkedUpload) {
+                  // Use chunked upload for large files
+                  const result = await recordingAPI.uploadRecordingChunked(
+                    blob,
+                    {
+                      sessionId: currentSessionId || '',
+                      sessionName: currentSessionName
+                    },
+                    (progress, current, total) => {
+                      setUploadProgress(progress);
+                      console.log(`📤 Upload progress: ${progress}% (chunk ${current}/${total})`);
+                    }
+                  );
+
+                  if (result.success) {
+                    console.log('✅ Recording uploaded successfully (chunked)');
+                  } else {
+                    console.error('❌ Chunked upload failed:', result.error);
+                  }
+                } else {
+                  // Use direct upload for smaller files
+                  const formData = new FormData();
+                  formData.append('recording', blob, `session-${currentSessionId || 'unknown'}-${Date.now()}.webm`);
+                  formData.append('sessionId', currentSessionId || '');
+                  formData.append('sessionName', currentSessionName);
+
+                  const response = await fetch('/api/recordings/upload', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                    body: formData
+                  });
+
+                  if (response.ok) {
+                    console.log('✅ Recording uploaded successfully (direct)');
+                  } else {
+                    console.error('❌ Direct upload failed:', await response.text());
+                  }
+                }
+              } catch (error) {
+                console.error('❌ Failed to upload recording:', error);
+              } finally {
+                setIsUploading(false);
+                setUploadProgress(0);
+                resolve();
+              }
+            };
+          });
+        }
+      };
+
+      // Execute upload
+      uploadRecording();
 
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -186,6 +237,12 @@ const SessionRoom = () => {
         streamRef.current = null;
       }
 
+      // Clean up socket event listeners
+      socket.off('participants-update');
+      socket.off('user-joined');
+      socket.off('user-left');
+      socket.off('session-terminated');
+      socket.off('message');
       socket.disconnect();
     };
   }, [sessionId, isRecording, user]);
@@ -238,32 +295,35 @@ const SessionRoom = () => {
 
   const confirmLeaveSession = async () => {
     setShowLeaveModal(false);
-    
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
       streamRef.current = null;
     }
-    
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
-    
+
     socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
 
     try {
-      // Use leaveSession if not owner, or endSession if owner
-      const isOwner = session?.owner === user?.username;
-      const result = isOwner
-        ? await sessionAPI.endSession(sessionId || '')
-        : await sessionAPI.leaveSession(sessionId || '');
+      // Use smart leave endpoint - it automatically handles owner vs member
+      const result = await sessionAPI.smartLeaveSession(sessionId || '');
 
       if (result.success) {
-        if (isOwner) {
+        if (result.action === 'terminated') {
+          // Owner left and session was terminated for all
+          console.log('👑 Session terminated by owner');
           socket.emit('session-terminated', { sessionId, terminatedBy: user?.id });
-        } else {
+        } else if (result.action === 'left') {
+          // Member left session
+          console.log('👤 Left session as member');
           socket.emit('user-left-session', { sessionId, userId: user?.id });
         }
+      } else {
+        console.error('Failed to leave session:', result.error);
       }
     } catch (error) {
       console.error('Error leaving session:', error);

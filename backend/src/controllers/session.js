@@ -170,12 +170,26 @@ exports.joinSession = async (req, res) => {
       }
     });
     
+    // Broadcast participant update to all users in the session
+    const participantsUpdate = updatedSession.members.map(m => ({
+      id: m.user.id,
+      username: m.user.username,
+      isOwner: m.user.id === updatedSession.ownerId
+    }));
+
+    // Emit to all users in the session room
+    if (req.io) {
+      req.io.to(sessionId.toString()).emit('participants-update', participantsUpdate);
+      console.log(`📡 Broadcasted participant update to session ${sessionId} (${participantsUpdate.length} participants)`);
+    }
+
     res.json({
       success: true,
       session: {
         ...updatedSession,
         owner: updatedSession.owner.username,
-        members: updatedSession.members.map(m => m.user.username)
+        members: updatedSession.members.map(m => m.user.username),
+        participants: participantsUpdate
       },
       message: 'Joined session successfully'
     });
@@ -664,7 +678,17 @@ exports.smartLeaveSession = async (req, res) => {
       });
       
       console.log(`🔴 Session ${sessionId} terminated by owner ${req.user.username} - all members removed`);
-      
+
+      // Broadcast session termination to all users in the room
+      if (req.io) {
+        req.io.to(sessionId.toString()).emit('session-terminated', {
+          sessionId,
+          message: 'Session has been ended by the owner'
+        });
+        req.io.to(sessionId.toString()).emit('participants-update', []);
+        console.log(`📡 Broadcasted session termination to session ${sessionId}`);
+      }
+
       return res.json({
         success: true,
         session: updatedSession,
@@ -691,7 +715,7 @@ exports.smartLeaveSession = async (req, res) => {
       });
       
       console.log(`👋 User ${req.user.username} left session ${sessionId}`);
-      
+
       // Get updated session info
       const updatedSession = await prisma.session.findUnique({
         where: { id: Number(sessionId) },
@@ -714,13 +738,27 @@ exports.smartLeaveSession = async (req, res) => {
           }
         }
       });
-      
+
+      // Broadcast updated participant list to remaining users
+      const participantsUpdate = updatedSession.members.map(m => ({
+        id: m.user.id,
+        username: m.user.username,
+        isOwner: m.user.id === updatedSession.ownerId
+      }));
+
+      if (req.io) {
+        req.io.to(sessionId.toString()).emit('participants-update', participantsUpdate);
+        req.io.to(sessionId.toString()).emit('user-left', { userId: req.user.id, username: req.user.username });
+        console.log(`📡 Broadcasted participant update to session ${sessionId} (${participantsUpdate.length} remaining)`);
+      }
+
       return res.json({
         success: true,
         session: {
           ...updatedSession,
           owner: updatedSession.owner.username,
-          members: updatedSession.members.map(m => m.user.username)
+          members: updatedSession.members.map(m => m.user.username),
+          participants: participantsUpdate
         },
         message: 'Left session successfully',
         action: 'left'
