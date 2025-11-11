@@ -242,9 +242,79 @@ export const recordingAPI = {
       });
       return { success: true, data: response.data };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || 'Upload failed' 
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Upload failed'
+      };
+    }
+  },
+
+  async uploadRecordingChunked(file, metadata, onProgress) {
+    try {
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const filename = `session-${metadata.sessionId || 'unknown'}-${Date.now()}.webm`;
+
+      console.log(`📦 Starting chunked upload: ${totalChunks} chunks, ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+
+      // Step 1: Initialize chunked upload
+      const initResponse = await api.post('/api/recordings/upload/init', {
+        sessionId: metadata.sessionId,
+        sessionName: metadata.sessionName,
+        totalChunks,
+        totalSize: file.size,
+        filename
+      });
+
+      if (!initResponse.data.success) {
+        throw new Error('Failed to initialize chunked upload');
+      }
+
+      const uploadId = initResponse.data.uploadId;
+      console.log(`📦 Upload initialized with ID: ${uploadId}`);
+
+      // Step 2: Upload chunks
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+
+        const chunkFormData = new FormData();
+        chunkFormData.append('chunk', chunk, `chunk-${chunkIndex}`);
+        chunkFormData.append('uploadId', uploadId);
+        chunkFormData.append('chunkIndex', chunkIndex.toString());
+
+        await api.post('/api/recordings/upload/chunk', chunkFormData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          }
+        });
+
+        // Report progress
+        const progress = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+        if (onProgress) {
+          onProgress(progress, chunkIndex + 1, totalChunks);
+        }
+        console.log(`📦 Uploaded chunk ${chunkIndex + 1}/${totalChunks} (${progress}%)`);
+      }
+
+      // Step 3: Complete upload
+      console.log(`📦 All chunks uploaded, assembling file...`);
+      const completeResponse = await api.post('/api/recordings/upload/complete', {
+        uploadId
+      });
+
+      if (!completeResponse.data.success) {
+        throw new Error('Failed to complete chunked upload');
+      }
+
+      console.log(`✅ Chunked upload completed successfully`);
+      return { success: true, data: completeResponse.data };
+    } catch (error) {
+      console.error('❌ Chunked upload failed:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error || error.message || 'Chunked upload failed'
       };
     }
   },
