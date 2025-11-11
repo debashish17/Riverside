@@ -11,6 +11,24 @@ class RecordingService {
 
   async processRecording(file, sessionId, sessionName, projectId) {
     try {
+      // Validate projectId
+      if (!projectId || isNaN(parseInt(projectId))) {
+        throw new Error('Valid project ID is required');
+      }
+
+      // Ensure filename ends with .webm
+      let filename = file.filename;
+      if (!filename.endsWith('.webm')) {
+        filename = filename + '.webm';
+        const newPath = path.join(this.uploadsDir, filename);
+        // Rename the file if needed
+        if (fs.existsSync(file.path)) {
+          fs.renameSync(file.path, newPath);
+          file.path = newPath;
+        }
+        file.filename = filename;
+      }
+
       const recordingData = {
         filename: file.filename,
         originalname: file.originalname,
@@ -61,7 +79,10 @@ class RecordingService {
 
       return {
         success: true,
-        recording: savedRecording,
+        recording: {
+          ...savedRecording,
+          id: savedRecording.id || Date.now()
+        },
         message: sessionId ? 'Session recording saved' : 'Recording uploaded'
       };
     } catch (error) {
@@ -148,8 +169,11 @@ class RecordingService {
           uploadedAt: 'desc'
         }
       });
-      
-      return recordings;
+
+      return recordings.map(r => ({
+        ...r,
+        id: r.id || Date.now()
+      }));
     } catch (dbError) {
       console.warn('⚠️ Database query failed, using file storage:', dbError.message);
       return this.getRecordingsFromFile();
@@ -166,10 +190,13 @@ class RecordingService {
       
       const data = fs.readFileSync(metadataFile, 'utf8');
       const metadata = JSON.parse(data);
-      
-      return metadata.sort((a, b) => 
-        new Date(b.uploadedAt) - new Date(a.uploadedAt)
-      );
+
+      return metadata
+        .map(r => ({
+          ...r,
+          id: r.id || Date.now()
+        }))
+        .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
     } catch (error) {
       console.error('❌ Failed to read recordings metadata:', error);
       return [];
@@ -199,7 +226,7 @@ class RecordingService {
           where: { id: parseInt(recordingId) }
         });
         
-        return { success: true, message: 'Recording deleted successfully' };
+        return { success: true, id: recordingId, message: 'Recording deleted successfully' };
       }
     } catch (dbError) {
       console.warn('⚠️ Database delete failed, trying file storage:', dbError.message);
@@ -209,9 +236,34 @@ class RecordingService {
   }
 
   async deleteRecordingFromFile(recordingId) {
-    // Implementation for file-based deletion
-    // This would be more complex and is left as an exercise
-    throw new Error('File-based deletion not implemented');
+    const metadataFile = path.join(this.uploadsDir, 'recordings-metadata.json');
+    try {
+      if (!fs.existsSync(metadataFile)) {
+        throw new Error('No recordings metadata file found');
+      }
+      const data = fs.readFileSync(metadataFile, 'utf8');
+      let metadata = JSON.parse(data);
+      const idx = metadata.findIndex(r => String(r.id) === String(recordingId));
+      if (idx === -1) {
+        throw new Error('Recording not found in metadata');
+      }
+      const recording = metadata[idx];
+      // Remove file if exists
+      if (recording.localPath && fs.existsSync(recording.localPath)) {
+        fs.unlinkSync(recording.localPath);
+      } else if (recording.filename) {
+        const filePath = path.join(this.uploadsDir, recording.filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+      // Remove from metadata
+      metadata.splice(idx, 1);
+      fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2));
+      return { success: true, id: recordingId, message: 'Recording deleted from file storage' };
+    } catch (error) {
+      throw new Error(`File-based deletion failed: ${error.message}`);
+    }
   }
 }
 

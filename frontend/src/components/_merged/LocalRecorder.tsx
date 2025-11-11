@@ -13,11 +13,11 @@ const LocalRecorder: React.FC<LocalRecorderProps> = ({ onRecordingComplete, clas
   const [recordingTime, setRecordingTime] = useState(0);
   const [error, setError] = useState('');
   
-  const mediaRecorderRef = useRef(null);
-  const streamRef = useRef(null);
-  const videoRef = useRef(null);
-  const timerRef = useRef(null);
-  const chunksRef = useRef([]);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   const startTimer = useCallback(() => {
     timerRef.current = setInterval(() => {
@@ -89,9 +89,11 @@ const LocalRecorder: React.FC<LocalRecorderProps> = ({ onRecordingComplete, clas
   const startRecording = async () => {
     const initialized = await initializeMediaRecorder();
     if (!initialized) return;
-    
+
     try {
-      mediaRecorderRef.current.start();
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.start();
+      }
       setIsRecording(true);
       setIsPaused(false);
       setRecordingTime(0);

@@ -51,19 +51,7 @@ try {
   };
 };
 
-let AuthMiddleware;
-try {
-  AuthMiddleware = require('./middleware/auth');
-} catch (error) {
-  console.warn('⚠️ Auth middleware not found, using basic auth');
-  AuthMiddleware = {
-    authenticate: (req, res, next) => {
-      // Use existing authMiddleware from controllers
-      const { authenticateJWT } = require('./controllers/authMiddleware');
-      return authenticateJWT(req, res, next);
-    }
-  };
-}
+const AuthMiddleware = require('./middleware/auth');
 
 // Import routes (with proper error handling)
 const authRoutes = require("./routes/auth.js");
@@ -149,7 +137,7 @@ app.use("/api/recordings", recordingsRoute);
 
 // New routes if available
 if (projectRoutes) {
-  app.use('/api/projects', AuthMiddleware ? AuthMiddleware.authenticate : (req, res, next) => next(), projectRoutes);
+  app.use('/api/projects', AuthMiddleware.authenticate, projectRoutes);
 }
 
 // API info endpoint

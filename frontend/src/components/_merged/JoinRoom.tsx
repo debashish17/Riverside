@@ -3,14 +3,24 @@ import { socket } from "../../utils/socket";
 import { Users, Link as LinkIcon, Copy } from 'lucide-react';
 import StatusMessage from './StatusMessage';
 
-export default function JoinRoom({ onRoomJoined }) {
+interface Participant {
+	id: string;
+	username?: string;
+}
+
+interface LogEntry {
+	message: string;
+	timestamp: string;
+}
+
+export default function JoinRoom({ onRoomJoined }: { onRoomJoined?: (roomId: string) => void }) {
 	const [roomId, setRoomId] = useState("");
 	const [connected, setConnected] = useState(false);
-	const [log, setLog] = useState([]);
-	const [participants, setParticipants] = useState([]);
+	const [log, setLog] = useState<LogEntry[]>([]);
+	const [participants, setParticipants] = useState<Participant[]>([]);
 	const [error, setError] = useState('');
 
-	const addLog = (message) => {
+	const addLog = (message: string) => {
 		setLog(prev => [...prev, { message, timestamp: new Date().toLocaleTimeString() }]);
 	};
 
@@ -52,7 +62,7 @@ export default function JoinRoom({ onRoomJoined }) {
 	};
 
 	useEffect(() => {
-		function onUserJoined({ userId }) {
+		function onUserJoined({ userId }: { userId: string }) {
 			addLog(`User joined: ${userId}`);
 			setParticipants(prev => {
 				if (!prev.find(p => p.id === userId)) {
@@ -62,12 +72,12 @@ export default function JoinRoom({ onRoomJoined }) {
 			});
 		}
 
-		function onUserLeft({ userId }) {
+		function onUserLeft({ userId }: { userId: string }) {
 			addLog(`User left: ${userId}`);
 			setParticipants(prev => prev.filter(p => p.id !== userId));
 		}
 
-		function onRoomUpdate({ participants: roomParticipants }) {
+		function onRoomUpdate({ participants: roomParticipants }: { participants?: Participant[] }) {
 			setParticipants(roomParticipants || []);
 		}
 

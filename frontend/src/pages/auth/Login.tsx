@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
 import { Video, Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 import { loginUser, updateLoginForm, clearForms, clearError } from '../../store/slices/authSlice';
+import type { RootState, AppDispatch } from '../../store';
 
 const Login = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -21,11 +22,11 @@ const Login = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  const handleInputChange = (field, value) => {
+  const handleInputChange = (field: string, value: string) => {
     dispatch(updateLoginForm({ [field]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!loginForm.username || !loginForm.password) {

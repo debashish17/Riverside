@@ -6,8 +6,6 @@ import { store } from './store';
 import { setAuthFromStorage, verifyToken } from './store/slices/authSlice';
 
 // Components
-import Navbar from './components/layout/Navbar';
-import Sidebar from './components/layout/Sidebar';
 import BaseLayout from './components/_merged/BaseLayout';
 import LoadingScreen from './components/_merged/LoadingScreen';
 import ErrorBoundary from './components/_merged/ErrorBoundary';
@@ -19,7 +17,7 @@ import Register from './pages/auth/Register';
 import CreateSession from './pages/session/CreateSession';
 import JoinSession from './pages/session/JoinSession';
 import SessionRoom from './pages/session/SessionRoom';
-import Sessions from './pages/session/Sessions';
+import Sessions from './pages/Sessions';
 import RecordingsPage from './components/_merged/RecordingsPage';
 import Projects from './pages/Projects';
 import Profile from './pages/Profile';
@@ -27,8 +25,8 @@ import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 
 // Protected Route Component
-const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, isLoading } = useSelector((state) => state.auth);
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, isLoading } = useSelector((state: any) => state.auth);
   
   if (isLoading) {
     return <LoadingScreen />;
@@ -40,8 +38,8 @@ const ProtectedRoute = ({ children }) => {
 // Main App Component
 const AppContent = () => {
   const dispatch = useDispatch();
-  const { isAuthenticated, isLoading } = useSelector((state) => state.auth);
-  const { theme, sidebarOpen } = useSelector((state) => state.ui);
+  const { isAuthenticated, isLoading } = useSelector((state: any) => state.auth);
+  const { theme, sidebarOpen } = useSelector((state: any) => state.ui);
 
   useEffect(() => {
     // Set theme on body
@@ -55,7 +53,7 @@ const AppContent = () => {
     // Verify token if exists
     const token = localStorage.getItem('auth_token');
     if (token) {
-      dispatch(verifyToken());
+      dispatch(verifyToken() as any);
     }
   }, [dispatch]);
 
@@ -114,7 +112,7 @@ const AppContent = () => {
             <Route path="/meeting" element={
               <ProtectedRoute>
                 <BaseLayout>
-                  {/* Meeting component can be added here */}
+                  <div>Meeting component coming soon</div>
                 </BaseLayout>
               </ProtectedRoute>
             } />

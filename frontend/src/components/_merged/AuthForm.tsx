@@ -12,10 +12,11 @@ interface AuthFormProps {
 export default function AuthForm({ isSignup = false, onToggleMode }: AuthFormProps) {
 	const dispatch = useDispatch<AppDispatch>();
 	const { isLoading, error } = useSelector((state: RootState) => state.auth);
-	const [formData, setFormData] = useState<{ username: string; email: string; password: string }>({
+	const [formData, setFormData] = useState<{ username: string; email: string; password: string; confirmPassword?: string }>({
 		username: "",
 		email: "",
-		password: ""
+		password: "",
+		confirmPassword: ""
 	});
 	const [showPassword, setShowPassword] = useState(false);
 
@@ -30,7 +31,12 @@ export default function AuthForm({ isSignup = false, onToggleMode }: AuthFormPro
 		e.preventDefault();
 		try {
 			if (isSignup) {
-				await dispatch(registerUser(formData as { username: string; email: string; password: string })).unwrap();
+				await dispatch(registerUser({
+					username: formData.username,
+					email: formData.email,
+					password: formData.password,
+					confirmPassword: formData.confirmPassword || formData.password
+				})).unwrap();
 			} else {
 				await dispatch(loginUser({ 
 					username: formData.username, 

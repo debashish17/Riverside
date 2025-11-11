@@ -3,41 +3,103 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { sessionAPI } from '../../utils/api';
 import toast from 'react-hot-toast';
 
+// Types
+export interface Participant {
+  id: string;
+  username: string;
+  // add other participant fields as needed
+}
+
+export interface Session {
+  id: string;
+  title: string;
+  name?: string;
+  description?: string;
+  isPrivate?: boolean;
+  maxParticipants?: number;
+  status?: string;
+  isOwner?: boolean;
+  owner?: string;
+  members?: Array<{ id: string; username: string; avatar?: string }>;
+  createdAt?: string;
+  endedAt?: string;
+  // add other session fields as needed
+}
+
+export interface SessionState {
+  currentSession: Session | null;
+  userSessions: Session[];
+  activeSessions: Session[];
+  recentSessions: Session[];
+  allSessions: Session[];
+  isInSession: boolean;
+  isCreating: boolean;
+  isJoining: boolean;
+  isLoading: boolean;
+  error: string | null;
+  participants: Participant[];
+  sessionForm: {
+    title: string;
+    description: string;
+    isPrivate: boolean;
+    maxParticipants: number;
+  };
+  joinForm: {
+    sessionId: string;
+    displayName: string;
+  };
+  localStream: any;
+  remoteStreams: Record<string, any>;
+  isVideoEnabled: boolean;
+  isAudioEnabled: boolean;
+  isScreenSharing: boolean;
+  isRecording: boolean;
+  recordingDuration: number;
+}
+
 // Async thunks for session actions
-export const createSession = createAsyncThunk(
+export const createSession = createAsyncThunk<
+  Session,
+  Partial<Session>,
+  { rejectValue: string }
+>(
   'session/create',
   async (sessionData, { rejectWithValue }) => {
     try {
       const result = await sessionAPI.createSession(sessionData);
-      if (result.success) {
+      if (result.success && result.data && result.data.id) {
         toast.success('Session created successfully!');
         return result.data;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error ?? 'Unknown error');
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
       toast.error('Failed to create session');
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const joinSession = createAsyncThunk(
+export const joinSession = createAsyncThunk<
+  Session,
+  { sessionId: string; userData: any },
+  { rejectValue: string }
+>(
   'session/join',
   async ({ sessionId, userData }, { rejectWithValue }) => {
     try {
       const result = await sessionAPI.joinSession(sessionId, userData);
-      if (result.success) {
+      if (result.success && result.data && result.data.id) {
         toast.success('Joined session successfully!');
         return result.data;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error ?? 'Unknown error');
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
       toast.error('Failed to join session');
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
@@ -53,7 +115,7 @@ export const getUserSessions = createAsyncThunk(
         return rejectWithValue(result.error);
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
@@ -69,7 +131,7 @@ export const getActiveSessions = createAsyncThunk(
         return rejectWithValue(result.error);
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
@@ -85,12 +147,16 @@ export const getRecentSessions = createAsyncThunk(
         return rejectWithValue(result.error);
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const endSession = createAsyncThunk(
+export const endSession = createAsyncThunk<
+  string | number,
+  string | number,
+  { rejectValue: string }
+>(
   'session/end',
   async (sessionId, { rejectWithValue }) => {
     try {
@@ -104,7 +170,7 @@ export const endSession = createAsyncThunk(
       }
     } catch (error) {
       toast.error('Failed to end session');
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
@@ -120,12 +186,12 @@ export const getAllSessions = createAsyncThunk(
         return rejectWithValue(result.error);
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-const initialState = {
+const initialState: SessionState = {
   currentSession: null,
   userSessions: [],
   activeSessions: [],
@@ -147,7 +213,6 @@ const initialState = {
     sessionId: '',
     displayName: ''
   },
-  // WebRTC related state
   localStream: null,
   remoteStreams: {},
   isVideoEnabled: true,
@@ -186,13 +251,13 @@ const sessionSlice = createSlice({
       state.currentSession = action.payload;
       state.isInSession = !!action.payload;
     },
-    addParticipant: (state, action) => {
+    addParticipant: (state, action: { payload: Participant }) => {
       state.participants.push(action.payload);
     },
-    removeParticipant: (state, action) => {
+    removeParticipant: (state, action: { payload: string }) => {
       state.participants = state.participants.filter(p => p.id !== action.payload);
     },
-    updateParticipant: (state, action) => {
+    updateParticipant: (state, action: { payload: Participant }) => {
       const index = state.participants.findIndex(p => p.id === action.payload.id);
       if (index !== -1) {
         state.participants[index] = { ...state.participants[index], ...action.payload };
@@ -257,7 +322,7 @@ const sessionSlice = createSlice({
       })
       .addCase(createSession.rejected, (state, action) => {
         state.isCreating = false;
-        state.error = action.payload;
+        state.error = action.payload || 'Failed to create session';
       })
       // Join session cases
       .addCase(joinSession.pending, (state) => {
@@ -271,7 +336,7 @@ const sessionSlice = createSlice({
       })
       .addCase(joinSession.rejected, (state, action) => {
         state.isJoining = false;
-        state.error = action.payload;
+        state.error = action.payload || 'Failed to join session';
       })
       // Get user sessions cases
       .addCase(getUserSessions.pending, (state) => {
@@ -283,7 +348,7 @@ const sessionSlice = createSlice({
       })
       .addCase(getUserSessions.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = (action.payload as string) || 'Failed to get user sessions';
       })
       // Get active sessions cases
       .addCase(getActiveSessions.pending, (state) => {
@@ -295,7 +360,7 @@ const sessionSlice = createSlice({
       })
       .addCase(getActiveSessions.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = (action.payload as string) || 'Failed to get active sessions';
       })
       // Get recent sessions cases
       .addCase(getRecentSessions.pending, (state) => {
@@ -307,7 +372,7 @@ const sessionSlice = createSlice({
       })
       .addCase(getRecentSessions.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = (action.payload as string) || 'Failed to get recent sessions';
       })
       // End session cases
       .addCase(endSession.fulfilled, (state, action) => {
@@ -332,7 +397,7 @@ const sessionSlice = createSlice({
       })
       .addCase(getAllSessions.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = (action.payload as string) || 'Failed to get all sessions';
       });
   }
 });

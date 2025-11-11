@@ -10,8 +10,15 @@ import {
   Download
 } from 'lucide-react';
 
-const VideoPlayer = ({ src, title, onDownload, className = '' }) => {
-  const videoRef = useRef(null);
+interface VideoPlayerProps {
+  src: string;
+  title?: string;
+  onDownload?: () => void;
+  className?: string;
+}
+
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, title, onDownload, className = '' }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -56,7 +63,7 @@ const VideoPlayer = ({ src, title, onDownload, className = '' }) => {
     setIsMuted(!isMuted);
   };
 
-  const handleVolumeChange = (e) => {
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     const video = videoRef.current;
     if (!video) return;
@@ -65,7 +72,7 @@ const VideoPlayer = ({ src, title, onDownload, className = '' }) => {
     setIsMuted(newVolume === 0);
   };
 
-  const handleSeek = (e) => {
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const video = videoRef.current;
     if (!video) return;
     const newTime = parseFloat(e.target.value);
@@ -73,7 +80,7 @@ const VideoPlayer = ({ src, title, onDownload, className = '' }) => {
     setCurrentTime(newTime);
   };
 
-  const skipTime = (seconds) => {
+  const skipTime = (seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
     video.currentTime = Math.max(0, Math.min(duration, currentTime + seconds));
@@ -89,7 +96,7 @@ const VideoPlayer = ({ src, title, onDownload, className = '' }) => {
     }
   };
 
-  const formatTime = (time) => {
+  const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;

@@ -45,8 +45,9 @@ const Register = () => {
     const result = await dispatch(registerUser({
       username: registerForm.username,
       email: registerForm.email,
-      password: registerForm.password
-    } as { username: string; email: string; password: string }));
+      password: registerForm.password,
+      confirmPassword: registerForm.confirmPassword
+    }));
 
     if (result.type === 'auth/register/fulfilled') {
       navigate('/login');

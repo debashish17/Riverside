@@ -20,7 +20,7 @@ export default function Dashboard() {
   async function handleEndSession(sessionId: string) {
     if (window.confirm('Are you sure you want to end this session?')) {
       try {
-  await dispatch(endSession(sessionId as unknown as undefined));
+        await dispatch(endSession(sessionId));
         dispatch(getActiveSessions());
       } catch (err) {
         console.error('Failed to end session:', err);

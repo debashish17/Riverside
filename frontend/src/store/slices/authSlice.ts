@@ -3,27 +3,61 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { authAPI } from '../../utils/api';
 import toast from 'react-hot-toast';
 
+// Types
+export interface User {
+  id: string;
+  username: string;
+  email?: string;
+  // add other user fields as needed
+}
+
+export interface AuthState {
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  loginForm: {
+    username: string;
+    password: string;
+  };
+  registerForm: {
+    username: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+  };
+}
+
 // Async thunks for auth actions
-export const loginUser = createAsyncThunk(
+export const loginUser = createAsyncThunk<
+  { user: User; token: string },
+  { username: string; password: string },
+  { rejectValue: string }
+>(
   'auth/login',
   async (credentials, { rejectWithValue }) => {
     try {
       const result = await authAPI.login(credentials);
-      if (result.success) {
+      if (result.success && result.data && result.data.user && result.data.token) {
         toast.success('Login successful!');
-        return result.data;
+        return { user: result.data.user, token: result.data.token };
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error ?? 'Unknown error');
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
       toast.error('Login failed');
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const registerUser = createAsyncThunk(
+export const registerUser = createAsyncThunk<
+  any,
+  { username: string; email: string; password: string; confirmPassword: string },
+  { rejectValue: string }
+>(
   'auth/register',
   async (userData, { rejectWithValue }) => {
     try {
@@ -32,17 +66,21 @@ export const registerUser = createAsyncThunk(
         toast.success('Registration successful!');
         return result.data;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error ?? 'Unknown error');
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
       toast.error('Registration failed');
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const logoutUser = createAsyncThunk(
+export const logoutUser = createAsyncThunk<
+  boolean,
+  void,
+  { rejectValue: string }
+>(
   'auth/logout',
   async (_, { rejectWithValue }) => {
     try {
@@ -51,15 +89,19 @@ export const logoutUser = createAsyncThunk(
         toast.success('Logged out successfully');
         return true;
       } else {
-        return rejectWithValue(result.error);
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const verifyToken = createAsyncThunk(
+export const verifyToken = createAsyncThunk<
+  { user: User },
+  void,
+  { rejectValue: string }
+>(
   'auth/verify',
   async (_, { rejectWithValue }) => {
     try {
@@ -67,15 +109,19 @@ export const verifyToken = createAsyncThunk(
       if (result.success) {
         return result.data;
       } else {
-        return rejectWithValue(result.error);
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const getCurrentUser = createAsyncThunk(
+export const getCurrentUser = createAsyncThunk<
+  User,
+  void,
+  { rejectValue: string }
+>(
   'auth/getCurrentUser',
   async (_, { rejectWithValue }) => {
     try {
@@ -83,15 +129,15 @@ export const getCurrentUser = createAsyncThunk(
       if (result.success) {
         return result.data;
       } else {
-        return rejectWithValue(result.error);
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-const initialState = {
+const initialState: AuthState = {
   user: null,
   token: localStorage.getItem('auth_token') || null,
   isAuthenticated: false,
@@ -116,10 +162,10 @@ const authSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
-    updateLoginForm: (state, action) => {
+    updateLoginForm: (state, action: { payload: Partial<AuthState['loginForm']> }) => {
       state.loginForm = { ...state.loginForm, ...action.payload };
     },
-    updateRegisterForm: (state, action) => {
+    updateRegisterForm: (state, action: { payload: Partial<AuthState['registerForm']> }) => {
       state.registerForm = { ...state.registerForm, ...action.payload };
     },
     clearForms: (state) => {
@@ -159,8 +205,8 @@ const authSlice = createSlice({
       .addCase(loginUser.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isAuthenticated = true;
-        state.user = action.payload.user;
-        state.token = action.payload.token;
+        state.user = action.payload?.user ?? null;
+        state.token = action.payload?.token ?? null;
         state.error = null;
       })
       .addCase(loginUser.rejected, (state, action) => {
@@ -168,7 +214,7 @@ const authSlice = createSlice({
         state.isAuthenticated = false;
         state.user = null;
         state.token = null;
-        state.error = action.payload;
+        state.error = typeof action.payload === 'string' ? action.payload : null;
       })
       // Register cases
       .addCase(registerUser.pending, (state) => {
@@ -182,7 +228,7 @@ const authSlice = createSlice({
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = typeof action.payload === 'string' ? action.payload : null;
       })
       // Logout cases
       .addCase(logoutUser.fulfilled, (state) => {
@@ -198,7 +244,7 @@ const authSlice = createSlice({
       // Verify token cases
       .addCase(verifyToken.fulfilled, (state, action) => {
         state.isAuthenticated = true;
-        state.user = action.payload.user;
+        state.user = action.payload?.user ?? null;
       })
       .addCase(verifyToken.rejected, (state) => {
         state.isAuthenticated = false;
@@ -207,8 +253,8 @@ const authSlice = createSlice({
       })
       // Get current user cases
       .addCase(getCurrentUser.fulfilled, (state, action) => {
-        state.user = action.payload;
-        state.isAuthenticated = true;
+        state.user = action.payload ?? null;
+        state.isAuthenticated = !!action.payload;
       })
       .addCase(getCurrentUser.rejected, (state) => {
         state.isAuthenticated = false;

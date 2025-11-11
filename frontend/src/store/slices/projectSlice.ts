@@ -3,6 +3,38 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { projectAPI } from '../../utils/api';
 import toast from 'react-hot-toast';
 
+interface Project {
+  id: number;
+  name: string;
+  description?: string;
+  isPublic?: boolean;
+  tags?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface ProjectState {
+  projects: Project[];
+  currentProject: Project | null;
+  isLoading: boolean;
+  isCreating: boolean;
+  isUpdating: boolean;
+  error: string | null;
+  projectForm: {
+    name: string;
+    description: string;
+    isPublic: boolean;
+    tags: string[];
+  };
+  filter: {
+    searchTerm: string;
+    sortBy: string;
+    sortOrder: string;
+    tags: string[];
+  };
+  selectedProjects: number[];
+}
+
 // Async thunks for project actions
 export const getProjects = createAsyncThunk(
   'project/getAll',
@@ -12,34 +44,34 @@ export const getProjects = createAsyncThunk(
       if (result.success) {
         return result.data;
       } else {
-        return rejectWithValue(result.error);
+        return rejectWithValue(result.error || 'Failed to get projects');
       }
-    } catch (error) {
-      return rejectWithValue(error.message);
+    } catch (error: any) {
+      return rejectWithValue(error?.message || 'Unknown error');
     }
   }
 );
 
 export const createProject = createAsyncThunk(
   'project/create',
-  async (projectData, { rejectWithValue }) => {
+  async (projectData: any, { rejectWithValue }) => {
     try {
       const result = await projectAPI.createProject(projectData);
       if (result.success) {
         toast.success('Project created successfully!');
         return result.data;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error || 'Failed to create project');
+        return rejectWithValue(result.error || 'Failed to create project');
       }
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Failed to create project');
-      return rejectWithValue(error.message);
+      return rejectWithValue(error?.message || 'Unknown error');
     }
   }
 );
 
-export const updateProject = createAsyncThunk(
+export const updateProject = createAsyncThunk<Project, { id: number; projectData: any }>(
   'project/update',
   async ({ id, projectData }, { rejectWithValue }) => {
     try {
@@ -48,17 +80,17 @@ export const updateProject = createAsyncThunk(
         toast.success('Project updated successfully!');
         return result.data;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error || 'Failed to update project');
+        return rejectWithValue(result.error || 'Failed to update project');
       }
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Failed to update project');
-      return rejectWithValue(error.message);
+      return rejectWithValue(error?.message || 'Unknown error');
     }
   }
 );
 
-export const deleteProject = createAsyncThunk(
+export const deleteProject = createAsyncThunk<number, number>(
   'project/delete',
   async (id, { rejectWithValue }) => {
     try {
@@ -67,17 +99,17 @@ export const deleteProject = createAsyncThunk(
         toast.success('Project deleted successfully');
         return id;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error || 'Failed to delete project');
+        return rejectWithValue(result.error || 'Failed to delete project');
       }
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Delete failed');
-      return rejectWithValue(error.message);
+      return rejectWithValue(error?.message || 'Unknown error');
     }
   }
 );
 
-const initialState = {
+const initialState: ProjectState = {
   projects: [],
   currentProject: null,
   isLoading: false,
@@ -177,7 +209,7 @@ const projectSlice = createSlice({
       })
       .addCase(getProjects.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = action.payload as string || 'Failed to get projects';
       })
       // Create project cases
       .addCase(createProject.pending, (state) => {
@@ -186,12 +218,12 @@ const projectSlice = createSlice({
       })
       .addCase(createProject.fulfilled, (state, action) => {
         state.isCreating = false;
-        state.projects.unshift(action.payload);
-        state.currentProject = action.payload;
+        state.projects.unshift(action.payload as Project);
+        state.currentProject = action.payload as Project;
       })
       .addCase(createProject.rejected, (state, action) => {
         state.isCreating = false;
-        state.error = action.payload;
+        state.error = action.payload as string || 'Failed to create project';
       })
       // Update project cases
       .addCase(updateProject.pending, (state) => {
@@ -211,7 +243,7 @@ const projectSlice = createSlice({
       })
       .addCase(updateProject.rejected, (state, action) => {
         state.isUpdating = false;
-        state.error = action.payload;
+        state.error = action.payload as string || 'Failed to update project';
       })
       // Delete project cases
       .addCase(deleteProject.fulfilled, (state, action) => {
@@ -223,7 +255,7 @@ const projectSlice = createSlice({
         }
       })
       .addCase(deleteProject.rejected, (state, action) => {
-        state.error = action.payload;
+        state.error = action.payload as string || 'Failed to delete project';
       });
   }
 });

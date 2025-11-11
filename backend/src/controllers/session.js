@@ -56,13 +56,6 @@ exports.createSession = async (req, res) => {
     
     console.log(`✅ Session created with ID: ${session.id}`);
     
-    // Debug: Verify session was created with correct status and member
-    console.log(`🔍 Debug - Session status: ${session.status}`);
-    console.log(`🔍 Debug - Session members:`, session.members.map(m => ({ 
-      userId: m.userId, 
-      username: m.user.username 
-    })));
-    
     // Return session data with consistent format
     const sessionResponse = {
       ...session,
@@ -343,8 +336,8 @@ exports.listUserSessions = async (req, res) => {
 exports.getActiveSessions = async (req, res) => {
   try {
     console.log(`🟢 Fetching active sessions for user: ${req.user.username}`);
-    
-    // First, let's check all sessions for this user to debug
+
+    // Update any sessions that don't have a status set (legacy data)
     const allUserSessions = await prisma.session.findMany({
       where: {
         members: {
@@ -360,10 +353,7 @@ exports.getActiveSessions = async (req, res) => {
         ownerId: true
       }
     });
-    
-    console.log(`🔍 Debug - All sessions for user ${req.user.username}:`, allUserSessions);
-    
-    // Update any sessions that don't have a status set (legacy data)
+
     if (allUserSessions.some(s => !s.status)) {
       console.log(`🔧 Updating sessions without status to 'active'`);
       await prisma.session.updateMany({

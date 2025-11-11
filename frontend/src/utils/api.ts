@@ -1,10 +1,22 @@
-// ...existing code from services/api.ts...
-// ...existing code from services/api.ts...// Authentication API service
+// Authentication API service
 import axios from 'axios';
-import Cookies from 'js-cookie';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 
-  (import.meta.env.MODE === 'production' ? '/api' : 'http://localhost:5000');
+// Type definitions for Vite env
+interface ImportMetaEnv {
+  VITE_API_URL?: string;
+  MODE?: string;
+}
+
+interface ImportMeta {
+  env: ImportMetaEnv;
+}
+
+// Base URL configuration
+// - In production: Use root path (backend serves from same origin)
+// - In development: Use localhost:5000 (backend runs separately)
+// - Custom: Use VITE_API_URL env variable if set
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000');
 
 // Create axios instance with default config
 const api = axios.create({
@@ -18,7 +30,7 @@ const api = axios.create({
 // Add auth token to requests
 api.interceptors.request.use(
   (config) => {
-    const token = Cookies.get('auth_token') || localStorage.getItem('auth_token');
+    const token = localStorage.getItem('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -33,10 +45,9 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Clear auth data on unauthorized
-      Cookies.remove('auth_token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('user');
-      
+
       // Only redirect if not already on login page
       if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
         window.location.href = '/login';
@@ -49,33 +60,32 @@ api.interceptors.response.use(
 // Authentication API methods
 export const authAPI = {
   // User authentication
-  async login(credentials) {
+  async login(credentials: any) {
     try {
       const response = await api.post('/api/auth/login', credentials);
       const { token, user } = response.data;
-      
-      // Store auth data
-      Cookies.set('auth_token', token, { expires: 7 }); // 7 days
+
+      // Store auth data in localStorage only
       localStorage.setItem('auth_token', token);
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       return { success: true, data: { token, user } };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || 'Login failed' 
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Login failed'
       };
     }
   },
 
-  async register(userData) {
+  async register(userData: any) {
     try {
       const response = await api.post('/api/auth/register', userData);
       return { success: true, data: response.data };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || 'Registration failed' 
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Registration failed'
       };
     }
   },
@@ -85,17 +95,16 @@ export const authAPI = {
       // Call backend logout endpoint if available
       try {
         await api.post('/api/auth/logout');
-      } catch (error) {
+      } catch (error: any) {
         // Continue with local cleanup even if backend call fails
         console.warn('Backend logout failed, continuing with local cleanup:', error.message);
       }
-      
-      // Clear local auth data
-      Cookies.remove('auth_token');
+
+      // Clear local auth data from localStorage only
       localStorage.removeItem('auth_token');
       localStorage.removeItem('user');
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
       return { success: false, error: 'Logout failed' };
     }
   },
@@ -202,32 +211,6 @@ export const sessionAPI = {
     }
   },
 
-  async smartLeaveSession(sessionId) {
-    try {
-      const response = await api.post('/api/session/smart-leave', { sessionId });
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { success: false, error: error.response?.data?.error || 'Failed to leave session' };
-    }
-  },
-
-  async terminateSession(sessionId) {
-    try {
-      const response = await api.post('/api/session/terminate', { sessionId });
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { success: false, error: error.response?.data?.error || 'Failed to terminate session' };
-    }
-  },
-
-  async clearSession(sessionId) {
-    try {
-      const response = await api.post('/api/session/clear', { sessionId });
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { success: false, error: error.response?.data?.error || 'Failed to clear session' };
-    }
-  },
 
   async getAllSessions() {
     try {

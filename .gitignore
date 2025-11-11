@@ -36,3 +36,4 @@ coverage
 *.swp
 *.swo
 *.tmp
+*.claude

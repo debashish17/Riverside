@@ -3,8 +3,44 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { recordingAPI } from '../../utils/api';
 import toast from 'react-hot-toast';
 
+// Types
+export interface Recording {
+  id: string;
+  filename: string;
+  originalname?: string;
+  projectId?: string;
+  sessionId?: string;
+  sessionName?: string;
+  uploadedAt?: string;
+  size?: number;
+  isLocal?: boolean;
+  uploadStatus?: string;
+}
+
+export interface RecordingState {
+  recordings: Recording[];
+  currentRecording: Recording | null;
+  isLoading: boolean;
+  isUploading: boolean;
+  uploadProgress: number;
+  error: string | null;
+  filter: {
+    searchTerm: string;
+    sortBy: string;
+    sortOrder: string;
+    dateRange: any;
+  };
+  selectedRecordings: string[];
+  isProcessing: boolean;
+  processingStatus: string | null;
+}
+
 // Async thunks for recording actions
-export const uploadRecording = createAsyncThunk(
+export const uploadRecording = createAsyncThunk<
+  Recording,
+  { file: File; metadata: any },
+  { rejectValue: string }
+>(
   'recording/upload',
   async ({ file, metadata }, { rejectWithValue }) => {
     try {
@@ -13,17 +49,21 @@ export const uploadRecording = createAsyncThunk(
         toast.success('Recording uploaded successfully!');
         return result.data;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error ?? 'Unknown error');
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
       toast.error('Upload failed');
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const getRecordings = createAsyncThunk(
+export const getRecordings = createAsyncThunk<
+  Recording[],
+  void,
+  { rejectValue: string }
+>(
   'recording/getAll',
   async (_, { rejectWithValue }) => {
     try {
@@ -31,15 +71,19 @@ export const getRecordings = createAsyncThunk(
       if (result.success) {
         return result.data;
       } else {
-        return rejectWithValue(result.error);
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const getRecording = createAsyncThunk(
+export const getRecording = createAsyncThunk<
+  Recording,
+  string,
+  { rejectValue: string }
+>(
   'recording/getOne',
   async (id, { rejectWithValue }) => {
     try {
@@ -47,15 +91,19 @@ export const getRecording = createAsyncThunk(
       if (result.success) {
         return result.data;
       } else {
-        return rejectWithValue(result.error);
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-export const deleteRecording = createAsyncThunk(
+export const deleteRecording = createAsyncThunk<
+  string,
+  string,
+  { rejectValue: string }
+>(
   'recording/delete',
   async (id, { rejectWithValue }) => {
     try {
@@ -64,17 +112,17 @@ export const deleteRecording = createAsyncThunk(
         toast.success('Recording deleted successfully');
         return id;
       } else {
-        toast.error(result.error);
-        return rejectWithValue(result.error);
+        toast.error(result.error ?? 'Unknown error');
+        return rejectWithValue(result.error ?? 'Unknown error');
       }
     } catch (error) {
       toast.error('Delete failed');
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
 
-const initialState = {
+const initialState: RecordingState = {
   recordings: [],
   currentRecording: null,
   isLoading: false,
@@ -99,10 +147,10 @@ const recordingSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
-    setCurrentRecording: (state, action) => {
+    setCurrentRecording: (state, action: { payload: Recording | null }) => {
       state.currentRecording = action.payload;
     },
-    updateFilter: (state, action) => {
+    updateFilter: (state, action: { payload: Partial<RecordingState['filter']> }) => {
       state.filter = { ...state.filter, ...action.payload };
     },
     clearFilter: (state) => {
@@ -113,7 +161,7 @@ const recordingSlice = createSlice({
         dateRange: null
       };
     },
-    toggleRecordingSelection: (state, action) => {
+    toggleRecordingSelection: (state, action: { payload: string }) => {
       const recordingId = action.payload;
       const index = state.selectedRecordings.indexOf(recordingId);
       if (index > -1) {
@@ -128,20 +176,20 @@ const recordingSlice = createSlice({
     clearSelection: (state) => {
       state.selectedRecordings = [];
     },
-    setUploadProgress: (state, action) => {
+    setUploadProgress: (state, action: { payload: number }) => {
       state.uploadProgress = action.payload;
     },
-    setProcessingStatus: (state, action) => {
+    setProcessingStatus: (state, action: { payload: string | null }) => {
       state.processingStatus = action.payload;
     },
-    updateRecordingMetadata: (state, action) => {
+    updateRecordingMetadata: (state, action: { payload: { id: string; metadata: Partial<Recording> } }) => {
       const { id, metadata } = action.payload;
       const recording = state.recordings.find(r => r.id === id);
       if (recording) {
         Object.assign(recording, metadata);
       }
     },
-    addLocalRecording: (state, action) => {
+    addLocalRecording: (state, action: { payload: Recording }) => {
       // Add a recording that's been created locally but not yet uploaded
       state.recordings.unshift({
         ...action.payload,
@@ -149,7 +197,7 @@ const recordingSlice = createSlice({
         uploadStatus: 'pending'
       });
     },
-    updateLocalRecording: (state, action) => {
+    updateLocalRecording: (state, action: { payload: { id: string; updates: Partial<Recording> } }) => {
       const { id, updates } = action.payload;
       const recording = state.recordings.find(r => r.id === id);
       if (recording) {
@@ -173,7 +221,7 @@ const recordingSlice = createSlice({
       .addCase(uploadRecording.rejected, (state, action) => {
         state.isUploading = false;
         state.uploadProgress = 0;
-        state.error = action.payload;
+        state.error = action.payload || 'Failed to upload recording';
       })
       // Get recordings cases
       .addCase(getRecordings.pending, (state) => {
@@ -185,7 +233,7 @@ const recordingSlice = createSlice({
       })
       .addCase(getRecordings.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = action.payload || 'Failed to get recordings';
       })
       // Get single recording cases
       .addCase(getRecording.pending, (state) => {
@@ -197,7 +245,7 @@ const recordingSlice = createSlice({
       })
       .addCase(getRecording.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = action.payload || 'Failed to get recording';
       })
       // Delete recording cases
       .addCase(deleteRecording.pending, (state) => {
@@ -214,7 +262,7 @@ const recordingSlice = createSlice({
       })
       .addCase(deleteRecording.rejected, (state, action) => {
         state.isProcessing = false;
-        state.error = action.payload;
+        state.error = action.payload || 'Failed to delete recording';
       });
   }
 });

@@ -4,17 +4,18 @@ import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Users, Search, ArrowRight, ArrowLeft, Plus, Info } from 'lucide-react';
 import { joinSession } from '../../store/slices/sessionSlice';
+import type { AppDispatch } from '../../store';
 
 const JoinSession = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const [sessionId, setSessionId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!sessionId.trim()) {
       setError('Please enter a session ID');
       return;
@@ -25,16 +26,19 @@ const JoinSession = () => {
 
     try {
       // Use Redux action to join session
-      const result = await dispatch(joinSession({ sessionId: sessionId.trim() }));
-      
+      const result = await dispatch(joinSession({
+        sessionId: sessionId.trim(),
+        userData: {}
+      }));
+
       if (result.payload) {
         // Navigate to the session room
         navigate(`/sessions/${sessionId.trim()}`);
       } else {
-        throw new Error(result.error || 'Failed to join session');
+        throw new Error((result as any).error || 'Failed to join session');
       }
-    } catch (err) {
-      setError(err.message || 'Failed to join session');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to join session');
     } finally {
       setIsLoading(false);
     }

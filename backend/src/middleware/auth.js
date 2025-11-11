@@ -26,7 +26,6 @@ class AuthMiddleware {
       req.user = decoded;
       next();
     } catch (error) {
-      console.error('❌ Token verification failed:', error.message);
       
       if (error.name === 'TokenExpiredError') {
         return res.status(401).json({ 

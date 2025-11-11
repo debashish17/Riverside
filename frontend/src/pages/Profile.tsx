@@ -2,9 +2,10 @@
 import React from 'react';
 import { User } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import type { RootState } from '../store';
 
 const Profile = () => {
-  const { user } = useSelector((state) => state.auth);
+  const { user } = useSelector((state: RootState) => state.auth);
 
   return (
     <div className="p-6 space-y-6">

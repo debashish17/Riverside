@@ -26,3 +26,6 @@ export const store = configureStore({
 // Export RootState and AppDispatch types for use in components
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
+
+import { useDispatch } from 'react-redux';
+export const useAppDispatch: () => AppDispatch = useDispatch;

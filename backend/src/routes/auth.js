@@ -1,6 +1,6 @@
 const express = require("express");
 const { login, signup, getUsers } = require("../controllers/auth.js");
-const { authenticateJWT, optionalAuth } = require("../controllers/authMiddleware.js");
+const AuthMiddleware = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -11,27 +11,27 @@ router.post("/login", login);
 router.post("/logout", (req, res) => {
   // For stateless JWT, logout is handled client-side
   // This endpoint can be used for logging/analytics
-  res.json({ 
+  res.json({
     message: "Logout successful",
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString()
   });
 });
 
 // Protected routes
-router.get("/users", authenticateJWT, getUsers);
+router.get("/users", AuthMiddleware.authenticate, getUsers);
 
 // Health check for auth service
 router.get("/health", (req, res) => {
-  res.json({ 
+  res.json({
     service: 'auth',
     status: 'healthy',
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString()
   });
 });
 
 // Test route to verify token
-router.get("/verify", authenticateJWT, (req, res) => {
-  res.json({ 
+router.get("/verify", AuthMiddleware.authenticate, (req, res) => {
+  res.json({
     valid: true,
     user: {
       id: req.user.id,

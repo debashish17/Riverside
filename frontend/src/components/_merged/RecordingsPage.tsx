@@ -1,13 +1,32 @@
 import React, { useEffect, useState } from "react";
+import { RootState } from '../../store';
 import VideoPlayer from './VideoPlayer';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from '../../store';
 import { getRecordings, deleteRecording } from '../../store/slices/recordingSlice';
 import { Video, Trash2, Calendar, HardDrive, Hash, Layers, AlertCircle, Loader2, Info, MoreVertical } from 'lucide-react';
 
 // Recording Card Component with Toggle Menu
-const RecordingCard = ({ rec, onDelete, isLoading }) => {
+type Recording = {
+  id?: string;
+  filename: string;
+  originalname?: string;
+  projectId?: string;
+  sessionId?: string;
+  sessionName?: string;
+  uploadedAt?: string;
+  size?: number;
+};
+
+type RecordingCardProps = {
+  rec: Recording;
+  onDelete: () => void;
+  isLoading: boolean;
+};
+
+const RecordingCard: React.FC<RecordingCardProps> = ({ rec, onDelete, isLoading }) => {
   const [showMenu, setShowMenu] = useState(false);
-  const [activeTab, setActiveTab] = useState(null); // 'info' or 'delete'
+  const [activeTab, setActiveTab] = useState<'info' | 'delete' | null>(null);
 
   return (
     <div className="p-4 relative">
@@ -20,6 +39,7 @@ const RecordingCard = ({ rec, onDelete, isLoading }) => {
         <button
           onClick={() => setShowMenu(!showMenu)}
           className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-lg transition-all relative z-10"
+          title="Show recording options"
         >
           <MoreVertical className="w-5 h-5" strokeWidth={1.5} />
         </button>
@@ -159,14 +179,18 @@ const RecordingCard = ({ rec, onDelete, isLoading }) => {
 };
 
 export default function RecordingsPage() {
-  const dispatch = useDispatch();
-  const { recordings, isLoading, error } = useSelector((state) => state.recording);
+  const dispatch = useAppDispatch();
+  const { recordings, isLoading, error } = useSelector((state: RootState) => state.recording);
 
   useEffect(() => {
     dispatch(getRecordings());
   }, [dispatch]);
 
-  const handleDelete = async (recordingId) => {
+  const handleDelete = async (recordingId: string | undefined) => {
+    if (!recordingId) {
+      alert('Cannot delete: recording id is missing.');
+      return;
+    }
     if (window.confirm('Are you sure you want to delete this recording?')) {
       await dispatch(deleteRecording(recordingId));
     }
@@ -251,7 +275,7 @@ export default function RecordingsPage() {
       {!isLoading && recordings.length > 0 && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {recordings.map((rec, idx) => (
+            {recordings.map((rec: Recording, idx: number) => (
               <div key={rec.filename || idx} className="relative group z-0">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500/0 to-purple-500/0 group-hover:from-blue-500/20 group-hover:to-purple-500/20 rounded-2xl blur transition-all duration-300"></div>
                 <div className="relative bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl overflow-visible">

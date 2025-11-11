@@ -1,10 +1,10 @@
 const express = require("express");
-const { authenticateJWT } = require("../controllers/authMiddleware.js");
+const AuthMiddleware = require("../middleware/auth");
 
 const router = express.Router();
 
 // Get current user profile
-router.get("/me", authenticateJWT, (req, res) => {
+router.get("/me", AuthMiddleware.authenticate, (req, res) => {
   try {
     const user = {
       id: req.user.id,
@@ -26,7 +26,7 @@ router.get("/me", authenticateJWT, (req, res) => {
 });
 
 // Alternative endpoint for compatibility
-router.get("/profile", authenticateJWT, (req, res) => {
+router.get("/profile", AuthMiddleware.authenticate, (req, res) => {
   try {
     const user = {
       id: req.user.id,
@@ -48,7 +48,7 @@ router.get("/profile", authenticateJWT, (req, res) => {
 });
 
 // Update user profile
-router.put("/profile", authenticateJWT, (req, res) => {
+router.put("/profile", AuthMiddleware.authenticate, (req, res) => {
   try {
     const { email, displayName } = req.body;
     

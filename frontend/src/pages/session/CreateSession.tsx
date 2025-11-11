@@ -4,9 +4,10 @@ import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Video, Settings, Users, ArrowLeft, ArrowRight, Sparkles, Info } from 'lucide-react';
 import { createSession } from '../../store/slices/sessionSlice';
+import type { AppDispatch } from '../../store';
 
 const CreateSession = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const [sessionName, setSessionName] = useState('');
   const [description, setDescription] = useState('');
@@ -14,10 +15,10 @@ const CreateSession = () => {
   const [maxParticipants, setMaxParticipants] = useState(10);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
+
     try {
       const sessionData = {
         name: sessionName || `Session-${Date.now()}`,
@@ -25,14 +26,14 @@ const CreateSession = () => {
         isPrivate,
         maxParticipants,
       };
-      
+
       const result = await dispatch(createSession(sessionData));
-      
-      if (result.payload && result.payload.id) {
+
+      if (result.payload && (result.payload as any).id) {
         console.log('✅ Session created successfully, navigating to session room...');
         // Small delay to ensure database transaction is committed
         setTimeout(() => {
-          navigate(`/sessions/${result.payload.id}`);
+          navigate(`/sessions/${(result.payload as any).id}`);
         }, 100);
       } else {
         console.error('❌ Failed to create session - no payload or ID');
