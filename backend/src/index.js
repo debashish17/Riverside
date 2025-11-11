@@ -129,6 +129,12 @@ if (healthRoutes) {
   });
 }
 
+// Make io accessible to routes via middleware
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
 // API routes with proper prefixes
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);

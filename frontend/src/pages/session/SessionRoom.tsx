@@ -119,7 +119,30 @@ const SessionRoom = () => {
 
     if (!socket.connected) socket.connect();
     socket.emit('join-room', { roomId: sessionId, userId: user?.id || user?.username });
-    socket.on('participants-update', setParticipants);
+
+    // Handle real-time participant updates
+    socket.on('participants-update', (updatedParticipants) => {
+      console.log('👥 Participants updated:', updatedParticipants);
+      setParticipants(updatedParticipants);
+    });
+
+    // Handle user joined event
+    socket.on('user-joined', (data) => {
+      console.log('👤 User joined:', data);
+    });
+
+    // Handle user left event
+    socket.on('user-left', (data) => {
+      console.log('👋 User left:', data);
+    });
+
+    // Handle session termination by owner
+    socket.on('session-terminated', (data) => {
+      console.log('🔴 Session terminated:', data);
+      alert(data.message || 'Session has been ended by the owner');
+      navigate('/dashboard');
+    });
+
     socket.on('message', (msg) => setMessages((prev) => [...prev, msg]));
 
     return () => {
@@ -214,6 +237,12 @@ const SessionRoom = () => {
         streamRef.current = null;
       }
 
+      // Clean up socket event listeners
+      socket.off('participants-update');
+      socket.off('user-joined');
+      socket.off('user-left');
+      socket.off('session-terminated');
+      socket.off('message');
       socket.disconnect();
     };
   }, [sessionId, isRecording, user]);
