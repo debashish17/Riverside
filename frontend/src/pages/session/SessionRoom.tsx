@@ -139,7 +139,15 @@ const SessionRoom = () => {
     // Handle session termination by owner
     socket.on('session-terminated', (data) => {
       console.log('🔴 Session terminated:', data);
-      alert(data.message || 'Session has been ended by the owner');
+      // Stop recording and cleanup
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      socket.disconnect();
       navigate('/dashboard');
     });
 
