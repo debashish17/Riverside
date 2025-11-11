@@ -139,7 +139,15 @@ const SessionRoom = () => {
     // Handle session termination by owner
     socket.on('session-terminated', (data) => {
       console.log('🔴 Session terminated:', data);
-      alert(data.message || 'Session has been ended by the owner');
+      // Stop recording and cleanup
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      socket.disconnect();
       navigate('/dashboard');
     });
 
@@ -296,14 +304,88 @@ const SessionRoom = () => {
   const confirmLeaveSession = async () => {
     setShowLeaveModal(false);
 
+    // Stop recording and upload BEFORE leaving
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+
+      // Wait for recording to stop and upload
+      await new Promise<void>((resolve) => {
+        if (!mediaRecorderRef.current) {
+          resolve();
+          return;
+        }
+
+        mediaRecorderRef.current.onstop = async () => {
+          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+
+          if (blob.size === 0) {
+            console.log('⚠️ No recording data to upload');
+            resolve();
+            return;
+          }
+
+          const currentSession = sessionRef.current;
+          const currentSessionId = sessionId || currentSession?.id;
+          const currentSessionName = currentSession?.name || `Session ${currentSessionId || 'unknown'}`;
+
+          const useChunkedUpload = blob.size > 10 * 1024 * 1024;
+
+          try {
+            setIsUploading(true);
+            console.log(`📤 Uploading recording before leaving (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
+
+            if (useChunkedUpload) {
+              const result = await recordingAPI.uploadRecordingChunked(
+                blob,
+                {
+                  sessionId: currentSessionId || '',
+                  sessionName: currentSessionName
+                },
+                (progress, current, total) => {
+                  setUploadProgress(progress);
+                  console.log(`📤 Upload progress: ${progress}% (chunk ${current}/${total})`);
+                }
+              );
+
+              if (result.success) {
+                console.log('✅ Recording uploaded successfully (chunked)');
+              } else {
+                console.error('❌ Chunked upload failed:', result.error);
+              }
+            } else {
+              const formData = new FormData();
+              formData.append('recording', blob, `session-${currentSessionId || 'unknown'}-${Date.now()}.webm`);
+              formData.append('sessionId', currentSessionId || '');
+              formData.append('sessionName', currentSessionName);
+
+              const response = await fetch('/api/recordings/upload', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                body: formData
+              });
+
+              if (response.ok) {
+                console.log('✅ Recording uploaded successfully (direct)');
+              } else {
+                console.error('❌ Direct upload failed:', await response.text());
+              }
+            }
+          } catch (error) {
+            console.error('❌ Failed to upload recording:', error);
+          } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
+            resolve();
+          }
+        };
+      });
+    }
+
+    // Clean up streams
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
       streamRef.current = null;
-    }
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
     }
 
     socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
