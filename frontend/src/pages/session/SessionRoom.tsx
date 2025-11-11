@@ -137,12 +137,71 @@ const SessionRoom = () => {
     });
 
     // Handle session termination by owner
-    socket.on('session-terminated', (data) => {
-      console.log('🔴 Session terminated:', data);
-      // Stop recording and cleanup
+    socket.on('session-terminated', async (data) => {
+      console.log('🔴 Session terminated by owner:', data);
+
+      // Stop recording and upload before redirecting
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
+
+        // Wait for recording to stop and upload
+        await new Promise<void>((resolve) => {
+          if (!mediaRecorderRef.current) {
+            resolve();
+            return;
+          }
+
+          mediaRecorderRef.current.onstop = async () => {
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+
+            if (blob.size === 0) {
+              console.log('⚠️ No recording data to upload');
+              resolve();
+              return;
+            }
+
+            const currentSession = sessionRef.current;
+            const currentSessionId = sessionId || currentSession?.id;
+            const currentSessionName = currentSession?.name || `Session ${currentSessionId || 'unknown'}`;
+            const useChunkedUpload = blob.size > 10 * 1024 * 1024;
+
+            try {
+              setIsUploading(true);
+              console.log(`📤 Uploading recording after termination (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
+
+              if (useChunkedUpload) {
+                const result = await recordingAPI.uploadRecordingChunked(
+                  blob,
+                  { sessionId: currentSessionId || '', sessionName: currentSessionName },
+                  (progress) => setUploadProgress(progress)
+                );
+                if (result.success) console.log('✅ Recording uploaded successfully');
+              } else {
+                const formData = new FormData();
+                formData.append('recording', blob, `session-${currentSessionId || 'unknown'}-${Date.now()}.webm`);
+                formData.append('sessionId', currentSessionId || '');
+                formData.append('sessionName', currentSessionName);
+
+                const response = await fetch('/api/recordings/upload', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                  body: formData
+                });
+
+                if (response.ok) console.log('✅ Recording uploaded successfully');
+              }
+            } catch (error) {
+              console.error('❌ Failed to upload recording:', error);
+            } finally {
+              setIsUploading(false);
+              setUploadProgress(0);
+              resolve();
+            }
+          };
+        });
       }
+
+      // Cleanup and redirect
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
@@ -398,11 +457,10 @@ const SessionRoom = () => {
         if (result.action === 'terminated') {
           // Owner left and session was terminated for all
           console.log('👑 Session terminated by owner');
-          socket.emit('session-terminated', { sessionId, terminatedBy: user?.id });
+          // Backend already broadcasted to other users, just disconnect
         } else if (result.action === 'left') {
           // Member left session
           console.log('👤 Left session as member');
-          socket.emit('user-left-session', { sessionId, userId: user?.id });
         }
       } else {
         console.error('Failed to leave session:', result.error);
@@ -411,6 +469,12 @@ const SessionRoom = () => {
       console.error('Error leaving session:', error);
     }
 
+    // Clean up socket and navigate
+    socket.off('participants-update');
+    socket.off('user-joined');
+    socket.off('user-left');
+    socket.off('session-terminated');
+    socket.off('message');
     socket.disconnect();
     navigate('/dashboard');
   };
