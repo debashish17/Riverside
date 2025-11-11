@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import type { RootState } from '../../store';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { sessionAPI } from '../../utils/api';
+import { sessionAPI, recordingAPI } from '../../utils/api';
 import { socket } from '../../utils/socket';
 import { 
   Video, 
@@ -58,6 +58,8 @@ const SessionRoom = () => {
   const [newMessage, setNewMessage] = useState('');
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   const fetchSessionData = useCallback(async (retryCount = 0) => {
     try {
@@ -123,18 +125,57 @@ const SessionRoom = () => {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.onstop = async () => {
           const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+
+          // Use chunked upload for files larger than 10MB, otherwise use regular upload
+          const useChunkedUpload = blob.size > 10 * 1024 * 1024; // 10MB threshold
+
           try {
-            const formData = new FormData();
-            formData.append('recording', blob, `session-${sessionId || 'unknown'}-${Date.now()}.webm`);
-            formData.append('sessionId', sessionId || '');
-            formData.append('sessionName', session?.name || `Session ${sessionId || 'unknown'}`);
-            await fetch('/api/recordings/upload', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-              body: formData
-            });
+            setIsUploading(true);
+            console.log(`📤 Uploading recording (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
+
+            if (useChunkedUpload) {
+              // Use chunked upload for large files
+              const result = await recordingAPI.uploadRecordingChunked(
+                blob,
+                {
+                  sessionId: sessionId || '',
+                  sessionName: session?.name || `Session ${sessionId || 'unknown'}`
+                },
+                (progress, current, total) => {
+                  setUploadProgress(progress);
+                  console.log(`📤 Upload progress: ${progress}% (chunk ${current}/${total})`);
+                }
+              );
+
+              if (result.success) {
+                console.log('✅ Recording uploaded successfully (chunked)');
+              } else {
+                console.error('❌ Chunked upload failed:', result.error);
+              }
+            } else {
+              // Use direct upload for smaller files
+              const formData = new FormData();
+              formData.append('recording', blob, `session-${sessionId || 'unknown'}-${Date.now()}.webm`);
+              formData.append('sessionId', sessionId || '');
+              formData.append('sessionName', session?.name || `Session ${sessionId || 'unknown'}`);
+
+              const response = await fetch('/api/recordings/upload', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                body: formData
+              });
+
+              if (response.ok) {
+                console.log('✅ Recording uploaded successfully (direct)');
+              } else {
+                console.error('❌ Direct upload failed:', await response.text());
+              }
+            }
           } catch (error) {
-            console.error('Failed to upload recording:', error);
+            console.error('❌ Failed to upload recording:', error);
+          } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
           }
         };
       }
@@ -555,7 +596,7 @@ const SessionRoom = () => {
                 {session?.owner === user?.username ? 'End Session' : 'Leave Session'}
               </h3>
               <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-                {session?.owner === user?.username 
+                {session?.owner === user?.username
                   ? 'As the session owner, ending the session will remove all participants and terminate the session for everyone. This action cannot be undone.'
                   : 'Are you sure you want to leave this session? You can rejoin using the session ID if needed.'
                 }
@@ -577,6 +618,34 @@ const SessionRoom = () => {
                 >
                   {session?.owner === user?.username ? 'End Session' : 'Leave Session'}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Progress Modal */}
+      {isUploading && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="relative max-w-md w-full mx-4">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-2xl blur"></div>
+            <div className="relative bg-zinc-900 border border-zinc-800/50 rounded-2xl p-6">
+              <h3 className="text-xl font-medium text-white mb-4">Uploading Recording</h3>
+              <p className="text-sm text-zinc-400 mb-4">
+                Please wait while your recording is being uploaded...
+              </p>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-zinc-800 rounded-full h-3 mb-3 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 ease-out rounded-full"
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Progress</span>
+                <span className="text-white font-medium">{uploadProgress}%</span>
               </div>
             </div>
           </div>
