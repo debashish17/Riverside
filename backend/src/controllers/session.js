@@ -946,9 +946,23 @@ exports.terminateSession = async (req, res) => {
         sessionId: Number(sessionId)
       }
     });
-    
+
     console.log(`🔴 Session ${sessionId} terminated by owner ${req.user.username} - all members removed`);
-    
+
+    // Broadcast session termination to all users in the room
+    if (req.io) {
+      const room = String(sessionId);
+      const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+      console.log(`📡 Attempting to broadcast termination to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+      req.io.to(room).emit('session-terminated', {
+        sessionId: room,
+        message: 'Session has been ended by the owner'
+      });
+      req.io.to(room).emit('participants-update', []);
+      console.log(`📡 Broadcasted session termination to session ${room}`);
+    }
+
     res.json({
       success: true,
       session: updatedSession,

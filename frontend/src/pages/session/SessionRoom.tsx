@@ -360,10 +360,8 @@ const SessionRoom = () => {
     setShowLeaveModal(true);
   };
 
-  const confirmLeaveSession = async () => {
-    setShowLeaveModal(false);
-
-    // Stop recording and upload BEFORE leaving
+  const uploadRecordingBeforeExit = async () => {
+    // Stop recording and upload
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
 
@@ -391,7 +389,7 @@ const SessionRoom = () => {
 
           try {
             setIsUploading(true);
-            console.log(`📤 Uploading recording before leaving (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
+            console.log(`📤 Uploading recording (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
 
             if (useChunkedUpload) {
               const result = await recordingAPI.uploadRecordingChunked(
@@ -439,34 +437,14 @@ const SessionRoom = () => {
         };
       });
     }
+  };
 
+  const cleanupAndNavigate = () => {
     // Clean up streams
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
       streamRef.current = null;
-    }
-
-    socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
-
-    try {
-      // Use smart leave endpoint - it automatically handles owner vs member
-      const result = await sessionAPI.smartLeaveSession(sessionId || '');
-
-      if (result.success) {
-        if (result.action === 'terminated') {
-          // Owner left and session was terminated for all
-          console.log('👑 Session terminated by owner');
-          // Backend already broadcasted to other users, just disconnect
-        } else if (result.action === 'left') {
-          // Member left session
-          console.log('👤 Left session as member');
-        }
-      } else {
-        console.error('Failed to leave session:', result.error);
-      }
-    } catch (error) {
-      console.error('Error leaving session:', error);
     }
 
     // Clean up socket and navigate
@@ -477,6 +455,52 @@ const SessionRoom = () => {
     socket.off('message');
     socket.disconnect();
     navigate('/dashboard');
+  };
+
+  const confirmLeaveSession = async () => {
+    setShowLeaveModal(false);
+
+    await uploadRecordingBeforeExit();
+
+    socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
+
+    try {
+      // Use leave endpoint - just leave without terminating
+      const result = await sessionAPI.leaveSession(sessionId || '');
+
+      if (result.success) {
+        console.log('👤 Left session successfully');
+      } else {
+        console.error('Failed to leave session:', result.error);
+      }
+    } catch (error) {
+      console.error('Error leaving session:', error);
+    }
+
+    cleanupAndNavigate();
+  };
+
+  const confirmTerminateSession = async () => {
+    setShowLeaveModal(false);
+
+    await uploadRecordingBeforeExit();
+
+    socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
+
+    try {
+      // Use terminate endpoint - end session for everyone
+      const result = await sessionAPI.terminateSession(sessionId || '');
+
+      if (result.success) {
+        console.log('👑 Session terminated successfully');
+      } else {
+        console.error('Failed to terminate session:', result.error);
+      }
+    } catch (error) {
+      console.error('Error terminating session:', error);
+    }
+
+    cleanupAndNavigate();
   };
 
   const cancelLeaveSession = () => {
@@ -802,7 +826,7 @@ const SessionRoom = () => {
           <button
             onClick={handleLeaveSession}
             className="group relative p-4 bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30 rounded-xl transition-all ml-2"
-            title={session?.owner === user?.username ? 'End Session (Owner)' : 'Leave Session'}
+            title={session?.owner === user?.username ? 'Session Options (Owner)' : 'Leave Session'}
           >
             <Phone className="w-5 h-5 transform rotate-[135deg]" strokeWidth={2} />
           </button>
@@ -816,32 +840,51 @@ const SessionRoom = () => {
             <div className="absolute -inset-0.5 bg-gradient-to-r from-red-500/20 to-orange-500/20 rounded-2xl blur"></div>
             <div className="relative bg-zinc-900 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="text-xl font-medium text-white mb-3">
-                {session?.owner === user?.username ? 'End Session' : 'Leave Session'}
+                {session?.owner === user?.username ? 'Session Options' : 'Leave Session'}
               </h3>
               <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
                 {session?.owner === user?.username
-                  ? 'As the session owner, ending the session will remove all participants and terminate the session for everyone. This action cannot be undone.'
+                  ? 'You are the session owner. You can either leave the session (it will continue running) or terminate it for all participants.'
                   : 'Are you sure you want to leave this session? You can rejoin using the session ID if needed.'
                 }
               </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={cancelLeaveSession}
-                  className="flex-1 px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 text-white rounded-xl hover:bg-zinc-800 transition-all font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmLeaveSession}
-                  className={`flex-1 px-4 py-3 text-white rounded-xl transition-all font-medium ${
-                    session?.owner === user?.username
-                      ? 'bg-orange-500 hover:bg-orange-600'
-                      : 'bg-red-500 hover:bg-red-600'
-                  }`}
-                >
-                  {session?.owner === user?.username ? 'End Session' : 'Leave Session'}
-                </button>
-              </div>
+              {session?.owner === user?.username ? (
+                <div className="space-y-3">
+                  <button
+                    onClick={cancelLeaveSession}
+                    className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 text-white rounded-xl hover:bg-zinc-800 transition-all font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmLeaveSession}
+                    className="w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all font-medium"
+                  >
+                    Leave Session (continues running)
+                  </button>
+                  <button
+                    onClick={confirmTerminateSession}
+                    className="w-full px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all font-medium"
+                  >
+                    Terminate Session (ends for everyone)
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <button
+                    onClick={cancelLeaveSession}
+                    className="flex-1 px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 text-white rounded-xl hover:bg-zinc-800 transition-all font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmLeaveSession}
+                    className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all font-medium"
+                  >
+                    Leave Session
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
