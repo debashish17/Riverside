@@ -62,13 +62,15 @@ router.post('/upload', upload.single('recording'), async (req, res) => {
 
     // Log the recording upload with session information
       const uploadInfo = {
+        id: Date.now(), // Generate unique ID
         filename: file.filename, // filename now always includes extension
         originalname: file.originalname,
         sessionId: sessionId,
         sessionName: sessionName || `Session ${sessionId}`,
         uploadedAt: new Date(),
         size: file.size,
-        type: 'session-recording'
+        type: 'session-recording',
+        uploadMethod: 'direct'
       };
 
     // Store metadata and save to file for persistence
@@ -103,19 +105,23 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     // Log the recording upload with session information
     const uploadInfo = {
+      id: Date.now(), // Generate unique ID
       filename: file.filename, // filename now always includes extension
       originalname: file.originalname,
       projectId,
       uploadedAt: new Date(),
-      size: file.size
+      size: file.size,
+      uploadMethod: 'direct'
     };
 
     // Add session information if provided
     if (sessionId) {
       uploadInfo.sessionId = sessionId;
       uploadInfo.sessionName = sessionName || `Session ${sessionId}`;
+      uploadInfo.type = 'session-recording';
       console.log(`Recording uploaded for session ${sessionId} (${sessionName}):`, file.originalname);
     } else {
+      uploadInfo.type = 'manual-recording';
       console.log('Manual recording uploaded:', file.originalname);
     }
 
@@ -157,6 +163,7 @@ router.get('/', (req, res) => {
         const metadata = recordingsMetadata.find(m => m.filename === filename);
 
         return {
+          id: metadata?.id || Date.now() + Math.random(), // Ensure ID is always present
           filename,
           originalname: metadata?.originalname || filename,
           projectId: metadata?.projectId || 1,
@@ -164,6 +171,8 @@ router.get('/', (req, res) => {
           sessionName: metadata?.sessionName,
           uploadedAt: metadata?.uploadedAt || stats.birthtime,
           size: metadata?.size || stats.size,
+          type: metadata?.type || 'unknown',
+          uploadMethod: metadata?.uploadMethod || 'legacy',
           ...metadata
         };
       })
@@ -175,6 +184,43 @@ router.get('/', (req, res) => {
   } catch (err) {
     console.error('Failed to get recordings:', err);
     res.status(500).json({ error: 'Failed to get recordings' });
+  }
+});
+
+// DELETE /api/recordings/:id - delete a recording
+router.delete('/:id', (req, res) => {
+  try {
+    const recordingId = req.params.id;
+
+    // Find recording in metadata
+    const recordingIndex = recordingsMetadata.findIndex(r => String(r.id) === String(recordingId));
+
+    if (recordingIndex === -1) {
+      return res.status(404).json({ error: 'Recording not found' });
+    }
+
+    const recording = recordingsMetadata[recordingIndex];
+
+    // Delete the file from disk
+    const filePath = path.join(__dirname, '../../uploads', recording.filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`🗑️ Deleted file: ${recording.filename}`);
+    }
+
+    // Remove from metadata
+    recordingsMetadata.splice(recordingIndex, 1);
+    saveMetadata();
+
+    console.log(`✅ Recording ${recordingId} deleted successfully`);
+    res.json({
+      success: true,
+      message: 'Recording deleted successfully',
+      id: recordingId
+    });
+  } catch (err) {
+    console.error('❌ Failed to delete recording:', err);
+    res.status(500).json({ error: 'Failed to delete recording' });
   }
 });
 
@@ -316,6 +362,7 @@ router.post('/upload/complete', async (req, res) => {
 
     // Save metadata
     const uploadInfo = {
+      id: Date.now(), // Generate unique ID
       filename: finalFilename,
       originalname: uploadSession.filename,
       sessionId: uploadSession.sessionId,

@@ -179,8 +179,12 @@ exports.joinSession = async (req, res) => {
 
     // Emit to all users in the session room
     if (req.io) {
-      req.io.to(sessionId.toString()).emit('participants-update', participantsUpdate);
-      console.log(`📡 Broadcasted participant update to session ${sessionId} (${participantsUpdate.length} participants)`);
+      const room = String(sessionId);
+      const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+      console.log(`📡 Broadcasting user joined to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+      req.io.to(room).emit('participants-update', participantsUpdate);
+      console.log(`📡 Broadcasted participant update to session ${room} (${participantsUpdate.length} participants)`);
     }
 
     res.json({
@@ -681,12 +685,16 @@ exports.smartLeaveSession = async (req, res) => {
 
       // Broadcast session termination to all users in the room
       if (req.io) {
-        req.io.to(sessionId.toString()).emit('session-terminated', {
-          sessionId,
+        const room = String(sessionId);
+        const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+        console.log(`📡 Attempting to broadcast to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+        req.io.to(room).emit('session-terminated', {
+          sessionId: room,
           message: 'Session has been ended by the owner'
         });
-        req.io.to(sessionId.toString()).emit('participants-update', []);
-        console.log(`📡 Broadcasted session termination to session ${sessionId}`);
+        req.io.to(room).emit('participants-update', []);
+        console.log(`📡 Broadcasted session termination to session ${room}`);
       }
 
       return res.json({
@@ -747,9 +755,13 @@ exports.smartLeaveSession = async (req, res) => {
       }));
 
       if (req.io) {
-        req.io.to(sessionId.toString()).emit('participants-update', participantsUpdate);
-        req.io.to(sessionId.toString()).emit('user-left', { userId: req.user.id, username: req.user.username });
-        console.log(`📡 Broadcasted participant update to session ${sessionId} (${participantsUpdate.length} remaining)`);
+        const room = String(sessionId);
+        const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+        console.log(`📡 Broadcasting member left to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+        req.io.to(room).emit('participants-update', participantsUpdate);
+        req.io.to(room).emit('user-left', { userId: req.user.id, username: req.user.username });
+        console.log(`📡 Broadcasted participant update to session ${room} (${participantsUpdate.length} remaining)`);
       }
 
       return res.json({

@@ -186,9 +186,11 @@ io.on("connection", (socket) => {
 
   // Legacy support for existing frontend
   socket.on("join-room", ({ roomId }) => {
-    console.log(`👤 Socket ${socket.id} joining room ${roomId}`);
-    socket.join(roomId);
-    socket.to(roomId).emit("user-joined", { userId: socket.id });
+    const room = String(roomId); // Ensure room is string
+    console.log(`👤 Socket ${socket.id} joining room ${room}`);
+    socket.join(room);
+    socket.to(room).emit("user-joined", { userId: socket.id });
+    console.log(`📡 Socket ${socket.id} joined room ${room} - Total in room: ${io.sockets.adapter.rooms.get(room)?.size || 0}`);
   });
 
   socket.on("signal", ({ roomId, data }) => {
