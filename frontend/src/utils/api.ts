@@ -220,6 +220,14 @@ export const sessionAPI = {
     }
   },
 
+  async terminateSession(sessionId) {
+    try {
+      const response = await api.post('/api/session/terminate', { sessionId });
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'Failed to terminate session' };
+    }
+  },
 
   async getAllSessions() {
     try {
