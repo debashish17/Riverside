@@ -117,20 +117,20 @@ exports.joinSession = async (req, res) => {
     });
     
     if (!session) {
-      return res.status(404).json({ 
-        error: 'Session not found' 
+      return res.status(404).json({
+        error: 'Session not found. Please check the session ID and try again.'
       });
     }
-    
+
     if (session.status !== 'active') {
-      return res.status(400).json({ 
-        error: 'Session is not active' 
+      return res.status(400).json({
+        error: `This session has ended and cannot be joined. Status: ${session.status}`
       });
     }
     
     if (session.members.length >= session.maxParticipants) {
-      return res.status(400).json({ 
-        error: 'Session is full' 
+      return res.status(400).json({
+        error: `Session is full. Maximum ${session.maxParticipants} participants allowed.`
       });
     }
     

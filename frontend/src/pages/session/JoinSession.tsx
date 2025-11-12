@@ -31,11 +31,14 @@ const JoinSession = () => {
         userData: {}
       }));
 
-      if (result.payload) {
-        // Navigate to the session room
+      // Check if the action was fulfilled
+      if (joinSession.fulfilled.match(result)) {
+        // Navigate to the session room on success
         navigate(`/sessions/${sessionId.trim()}`);
-      } else {
-        throw new Error((result as any).error || 'Failed to join session');
+      } else if (joinSession.rejected.match(result)) {
+        // Handle rejected action - extract error message
+        const errorMessage = result.payload as string || 'Failed to join session';
+        setError(errorMessage);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to join session');
