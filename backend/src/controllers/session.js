@@ -820,37 +820,34 @@ exports.leaveSession = async (req, res) => {
     });
     
     if (!session) {
-      return res.status(404).json({ 
-        error: 'Session not found' 
+      return res.status(404).json({
+        error: 'Session not found'
       });
     }
-    
-    // Check if user is the owner
-    const isOwner = Number(session.ownerId) === Number(req.user.id);
-    if (isOwner) {
-      console.log(`⚠️ Owner ${req.user.username} attempted to use leaveSession - should use smartLeaveSession or endSession instead`);
-      return res.status(400).json({
-        error: 'Session owner cannot leave. Use end/clear session instead.',
-        suggestion: 'Use endSession to mark as ended or clearSession to delete completely'
-      });
-    }
-    
+
     // Check if user is actually a member
     const memberRecord = session.members.find(m => m.userId === req.user.id);
     if (!memberRecord) {
-      return res.status(404).json({ 
-        error: 'You are not a member of this session' 
+      return res.status(404).json({
+        error: 'You are not a member of this session'
       });
     }
-    
+
+    // Check if user is the owner
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+
     // Remove user from session members
     await prisma.sessionMember.delete({
       where: {
         id: memberRecord.id
       }
     });
-    
-    console.log(`👋 User ${req.user.username} left session ${sessionId}`);
+
+    if (isOwner) {
+      console.log(`👑 Owner ${req.user.username} left session ${sessionId} - session continues without owner`);
+    } else {
+      console.log(`👋 User ${req.user.username} left session ${sessionId}`);
+    }
     
     // Get updated session info
     const updatedSession = await prisma.session.findUnique({
@@ -874,13 +871,35 @@ exports.leaveSession = async (req, res) => {
         }
       }
     });
-    
+
+    // Broadcast updated participant list to remaining users
+    const participantsUpdate = updatedSession.members.map(m => ({
+      id: m.user.id,
+      username: m.user.username,
+      isOwner: Number(m.user.id) === Number(updatedSession.ownerId)
+    }));
+
+    if (req.io) {
+      const room = String(sessionId);
+      const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+      console.log(`📡 Broadcasting member left to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+      req.io.to(room).emit('participants-update', participantsUpdate);
+      req.io.to(room).emit('user-left', {
+        userId: req.user.id,
+        username: req.user.username,
+        wasOwner: isOwner
+      });
+      console.log(`📡 Broadcasted participant update to session ${room} (${participantsUpdate.length} remaining)`);
+    }
+
     res.json({
       success: true,
       session: {
         ...updatedSession,
         owner: updatedSession.owner.username,
-        members: updatedSession.members.map(m => m.user.username)
+        members: updatedSession.members.map(m => m.user.username),
+        participants: participantsUpdate
       },
       message: 'Left session successfully'
     });
