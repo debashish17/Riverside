@@ -64,7 +64,7 @@ exports.createSession = async (req, res) => {
       participants: session.members.map(m => ({
         id: m.user.id,
         username: m.user.username,
-        isOwner: m.user.id === session.ownerId
+        isOwner: Number(m.user.id) === Number(session.ownerId)
       }))
     };
     
@@ -247,8 +247,10 @@ exports.getSession = async (req, res) => {
     }
     
     // Check if user has access to this session (owner or member)
-    const isMember = session.members.some(m => m.userId === req.user.id);
-    const isOwner = session.ownerId === req.user.id;
+    const isMember = session.members.some(m => Number(m.userId) === Number(req.user.id));
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+
+    console.log(`🔍 Get session ${sessionId} - User: ${req.user.id} (${req.user.username}), Is Owner: ${isOwner}, Is Member: ${isMember}`);
     
     if (!isMember && !isOwner) {
       return res.status(403).json({ 
@@ -260,8 +262,10 @@ exports.getSession = async (req, res) => {
     const participants = session.members.map(m => ({
       id: m.user.id,
       username: m.user.username,
-      isOwner: m.user.id === session.ownerId
+      isOwner: Number(m.user.id) === Number(session.ownerId)
     }));
+
+    console.log(`📋 Session ${sessionId} participants:`, participants.map(p => `${p.username}${p.isOwner ? ' (owner)' : ''}`).join(', '));
     
     res.json({
       success: true,
@@ -530,9 +534,11 @@ exports.endSession = async (req, res) => {
       });
     }
     
-    if (session.ownerId !== req.user.id) {
-      return res.status(403).json({ 
-        error: 'Only session owner can end the session' 
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    if (!isOwner) {
+      console.log(`❌ User ${req.user.username} (ID: ${req.user.id}) attempted to end session owned by ${session.owner.username} (ID: ${session.ownerId})`);
+      return res.status(403).json({
+        error: 'Only session owner can end the session'
       });
     }
     
@@ -605,9 +611,11 @@ exports.clearSession = async (req, res) => {
       });
     }
     
-    if (session.ownerId !== req.user.id) {
-      return res.status(403).json({ 
-        error: 'Only session owner can clear the session' 
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    if (!isOwner) {
+      console.log(`❌ User ${req.user.username} (ID: ${req.user.id}) attempted to clear session owned by ${session.owner.username} (ID: ${session.ownerId})`);
+      return res.status(403).json({
+        error: 'Only session owner can clear the session'
       });
     }
     
@@ -661,7 +669,10 @@ exports.smartLeaveSession = async (req, res) => {
     }
     
     // Check if user is the owner
-    if (session.ownerId === req.user.id) {
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    console.log(`🔍 Leave check - User: ${req.user.id} (${req.user.username}), Session Owner: ${session.ownerId} (${session.owner.username}), Is Owner: ${isOwner}`);
+
+    if (isOwner) {
       // Owner leaving: Terminate session and remove all members
       console.log(`👑 Owner ${req.user.username} leaving session ${sessionId} - terminating for all members`);
       
@@ -815,8 +826,10 @@ exports.leaveSession = async (req, res) => {
     }
     
     // Check if user is the owner
-    if (session.ownerId === req.user.id) {
-      return res.status(400).json({ 
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    if (isOwner) {
+      console.log(`⚠️ Owner ${req.user.username} attempted to use leaveSession - should use smartLeaveSession or endSession instead`);
+      return res.status(400).json({
         error: 'Session owner cannot leave. Use end/clear session instead.',
         suggestion: 'Use endSession to mark as ended or clearSession to delete completely'
       });
@@ -910,9 +923,11 @@ exports.terminateSession = async (req, res) => {
     }
     
     // Only session owner can terminate
-    if (session.ownerId !== req.user.id) {
-      return res.status(403).json({ 
-        error: 'Only session owner can terminate the session' 
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    if (!isOwner) {
+      console.log(`❌ User ${req.user.username} (ID: ${req.user.id}) attempted to terminate session owned by ${session.owner.username} (ID: ${session.ownerId})`);
+      return res.status(403).json({
+        error: 'Only session owner can terminate the session'
       });
     }
     

@@ -489,6 +489,19 @@ const SessionRoom = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleSendMessage = () => {
+    if (newMessage.trim() === '') return;
+
+    socket.emit('send-message', {
+      roomId: sessionId,
+      message: newMessage,
+      sender: user?.username || 'Anonymous',
+      timestamp: new Date().toISOString()
+    });
+
+    setNewMessage('');
+  };
+
   // Calculate grid layout based on participant count
   const getGridLayout = () => {
     const totalParticipants = participants.length;
@@ -697,10 +710,14 @@ const SessionRoom = () => {
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                   placeholder="Type a message..."
                   className="flex-1 px-4 py-2.5 bg-zinc-800/50 border border-zinc-700/50 text-white placeholder-zinc-600 rounded-lg focus:outline-none focus:border-zinc-600 transition-all text-sm"
                 />
-                <button className="p-2.5 bg-white text-black rounded-lg hover:bg-zinc-100 transition-all">
+                <button
+                  onClick={handleSendMessage}
+                  className="p-2.5 bg-white text-black rounded-lg hover:bg-zinc-100 transition-all"
+                >
                   <Send className="w-5 h-5" strokeWidth={2} />
                 </button>
               </div>
