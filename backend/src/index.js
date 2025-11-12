@@ -235,6 +235,22 @@ io.on("connection", (socket) => {
     });
   });
 
+  // Chat message handling
+  socket.on('send-message', (data) => {
+    const { roomId, message, sender, timestamp } = data;
+    const room = String(roomId);
+    console.log(`💬 Message from ${sender} in room ${room}: "${message}"`);
+
+    // Broadcast message to all users in the room (including sender for confirmation)
+    io.to(room).emit('message', {
+      text: message,
+      sender: sender,
+      timestamp: timestamp || new Date().toISOString()
+    });
+
+    console.log(`📨 Broadcasted message to room ${room}`);
+  });
+
   socket.on("disconnect", () => {
     console.log(`🔌 Socket disconnected: ${socket.id}`);
   });
