@@ -39,6 +39,7 @@ const SessionRoom = () => {
   interface Session {
     id?: string;
     name?: string;
+    ownerId?: number;
     owner?: string;
     participants?: Participant[];
   }
@@ -465,39 +466,25 @@ const SessionRoom = () => {
     socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
 
     try {
-      // Use leave endpoint - just leave without terminating
-      const result = await sessionAPI.leaveSession(sessionId || '');
+      // Use smart-leave endpoint - handles both owner and member cases
+      // Owner: terminates session for everyone
+      // Member: just leaves the session
+      const result = await sessionAPI.smartLeaveSession(sessionId || '');
 
       if (result.success) {
-        console.log('👤 Left session successfully');
+        const action = result.action;
+        if (action === 'terminated') {
+          console.log('👑 Session terminated successfully (owner left)');
+        } else if (action === 'left') {
+          console.log('👤 Left session successfully (member left)');
+        } else {
+          console.log('✅ Left session successfully');
+        }
       } else {
         console.error('Failed to leave session:', result.error);
       }
     } catch (error) {
       console.error('Error leaving session:', error);
-    }
-
-    cleanupAndNavigate();
-  };
-
-  const confirmTerminateSession = async () => {
-    setShowLeaveModal(false);
-
-    await uploadRecordingBeforeExit();
-
-    socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
-
-    try {
-      // Use terminate endpoint - end session for everyone
-      const result = await sessionAPI.terminateSession(sessionId || '');
-
-      if (result.success) {
-        console.log('👑 Session terminated successfully');
-      } else {
-        console.error('Failed to terminate session:', result.error);
-      }
-    } catch (error) {
-      console.error('Error terminating session:', error);
     }
 
     cleanupAndNavigate();
@@ -826,7 +813,7 @@ const SessionRoom = () => {
           <button
             onClick={handleLeaveSession}
             className="group relative p-4 bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30 rounded-xl transition-all ml-2"
-            title={session?.owner === user?.username ? 'Session Options (Owner)' : 'Leave Session'}
+            title={session?.ownerId === user?.id ? 'Leave & Terminate Session' : 'Leave Session'}
           >
             <Phone className="w-5 h-5 transform rotate-[135deg]" strokeWidth={2} />
           </button>
@@ -840,51 +827,28 @@ const SessionRoom = () => {
             <div className="absolute -inset-0.5 bg-gradient-to-r from-red-500/20 to-orange-500/20 rounded-2xl blur"></div>
             <div className="relative bg-zinc-900 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="text-xl font-medium text-white mb-3">
-                {session?.owner === user?.username ? 'Session Options' : 'Leave Session'}
+                {session?.ownerId === user?.id ? 'Leave & Terminate Session' : 'Leave Session'}
               </h3>
               <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-                {session?.owner === user?.username
-                  ? 'You are the session owner. You can either leave the session (it will continue running) or terminate it for all participants.'
-                  : 'Are you sure you want to leave this session? You can rejoin using the session ID if needed.'
+                {session?.ownerId === user?.id
+                  ? 'You are the session owner. Leaving will terminate the session for all participants. Their recordings will be saved automatically.'
+                  : 'Are you sure you want to leave this session? Your recording will be saved. You can rejoin using the session ID if the session is still active.'
                 }
               </p>
-              {session?.owner === user?.username ? (
-                <div className="space-y-3">
-                  <button
-                    onClick={cancelLeaveSession}
-                    className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 text-white rounded-xl hover:bg-zinc-800 transition-all font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmLeaveSession}
-                    className="w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all font-medium"
-                  >
-                    Leave Session (continues running)
-                  </button>
-                  <button
-                    onClick={confirmTerminateSession}
-                    className="w-full px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all font-medium"
-                  >
-                    Terminate Session (ends for everyone)
-                  </button>
-                </div>
-              ) : (
-                <div className="flex gap-3">
-                  <button
-                    onClick={cancelLeaveSession}
-                    className="flex-1 px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 text-white rounded-xl hover:bg-zinc-800 transition-all font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmLeaveSession}
-                    className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all font-medium"
-                  >
-                    Leave Session
-                  </button>
-                </div>
-              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={cancelLeaveSession}
+                  className="flex-1 px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 text-white rounded-xl hover:bg-zinc-800 transition-all font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmLeaveSession}
+                  className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all font-medium"
+                >
+                  {session?.ownerId === user?.id ? 'Leave & Terminate' : 'Leave Session'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

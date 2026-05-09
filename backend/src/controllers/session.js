@@ -640,6 +640,9 @@ exports.clearSession = async (req, res) => {
 };
 
 // Smart leave session - handles both owner and member cases
+// THIS IS THE RECOMMENDED ENDPOINT TO USE FOR LEAVING SESSIONS
+// Owner: Terminates session and removes all members
+// Member: Just removes themselves from the session
 exports.smartLeaveSession = async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -797,6 +800,8 @@ exports.smartLeaveSession = async (req, res) => {
 };
 
 // Leave session - for non-owners to leave the session
+// WARNING: This endpoint allows owners to leave without terminating, creating ownerless sessions
+// DEPRECATED: Use smartLeaveSession instead
 exports.leaveSession = async (req, res) => {
   try {
     const { sessionId } = req.body;

@@ -1,1 +1,107 @@
-[]
+[
+  {
+    "filename": "session-32-1762895483535.webm",
+    "originalname": "session-32-1762895483535.webm",
+    "sessionId": "32",
+    "sessionName": "Session 32",
+    "uploadedAt": "2025-11-11T21:11:23.763Z",
+    "size": 18716080,
+    "type": "session-recording",
+    "uploadMethod": "chunked"
+  },
+  {
+    "filename": "e48850ad41c8be5fc2633f40a8edf282.webm",
+    "originalname": "session-32-1762895526861.webm",
+    "sessionId": "32",
+    "sessionName": "Session 32",
+    "uploadedAt": "2025-11-11T21:12:06.905Z",
+    "size": 804824,
+    "type": "session-recording"
+  },
+  {
+    "filename": "f40125f571343b2a41b5576826c85c33.webm",
+    "originalname": "session-34-1762896183925.webm",
+    "sessionId": "34",
+    "sessionName": "Session 34",
+    "uploadedAt": "2025-11-11T21:23:03.961Z",
+    "size": 1168375,
+    "type": "session-recording"
+  },
+  {
+    "id": 1762939084410,
+    "filename": "session-36-1762939084213.webm",
+    "originalname": "session-36-1762939084213.webm",
+    "sessionId": "36",
+    "sessionName": "Session 36",
+    "uploadedAt": "2025-11-12T09:18:04.410Z",
+    "size": 12909729,
+    "type": "session-recording",
+    "uploadMethod": "chunked"
+  },
+  {
+    "id": 1762940364857,
+    "filename": "0c4f33170491835ee9176853d5a14226.webm",
+    "originalname": "session-38-1762940364837.webm",
+    "sessionId": "38",
+    "sessionName": "Session 38",
+    "uploadedAt": "2025-11-12T09:39:24.857Z",
+    "size": 219024,
+    "type": "session-recording",
+    "uploadMethod": "direct"
+  },
+  {
+    "id": 1762940756229,
+    "filename": "c34de87487d65429902748a5ee720c32.webm",
+    "originalname": "session-39-1762940756155.webm",
+    "sessionId": "39",
+    "sessionName": "Session 39",
+    "uploadedAt": "2025-11-12T09:45:56.229Z",
+    "size": 5253641,
+    "type": "session-recording",
+    "uploadMethod": "direct"
+  },
+  {
+    "id": 1762946498083,
+    "filename": "session-40-1762946497861.webm",
+    "originalname": "session-40-1762946497861.webm",
+    "sessionId": "40",
+    "sessionName": "Session 40",
+    "uploadedAt": "2025-11-12T11:21:38.083Z",
+    "size": 10992633,
+    "type": "session-recording",
+    "uploadMethod": "chunked"
+  },
+  {
+    "id": 1762947478972,
+    "filename": "session-41-1762947478717.webm",
+    "originalname": "session-41-1762947478717.webm",
+    "sessionId": "41",
+    "sessionName": "Session 41",
+    "uploadedAt": "2025-11-12T11:37:58.972Z",
+    "size": 16963744,
+    "type": "session-recording",
+    "uploadMethod": "chunked"
+  },
+  {
+    "id": 1762952985337,
+    "filename": "5a25a09753ac3a8e79c25373291d7903.webm",
+    "originalname": "session-40-1762952985301.webm",
+    "sessionId": "40",
+    "sessionName": "Session 40",
+    "uploadedAt": "2025-11-12T13:09:45.337Z",
+    "size": 213006,
+    "type": "session-recording",
+    "uploadMethod": "direct"
+  },
+  {
+    "id": 1762953023382,
+    "filename": "9f5713f08ff3e83ca518fd68f2a392f5.webm",
+    "originalname": "session-50-1762953023354.webm",
+    "sessionId": "50",
+    "sessionName": "Session 50",
+    "uploadedAt": "2025-11-12T13:10:23.382Z",
+    "size": 266862,
+    "type": "session-recording",
+    "uploadMethod": "direct"
+  }
+]
