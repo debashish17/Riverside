@@ -129,6 +129,12 @@ if (healthRoutes) {
   });
 }
 
+// Make io accessible to routes via middleware
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
 // API routes with proper prefixes
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
@@ -180,9 +186,11 @@ io.on("connection", (socket) => {
 
   // Legacy support for existing frontend
   socket.on("join-room", ({ roomId }) => {
-    console.log(`👤 Socket ${socket.id} joining room ${roomId}`);
-    socket.join(roomId);
-    socket.to(roomId).emit("user-joined", { userId: socket.id });
+    const room = String(roomId); // Ensure room is string
+    console.log(`👤 Socket ${socket.id} joining room ${room}`);
+    socket.join(room);
+    socket.to(room).emit("user-joined", { userId: socket.id });
+    console.log(`📡 Socket ${socket.id} joined room ${room} - Total in room: ${io.sockets.adapter.rooms.get(room)?.size || 0}`);
   });
 
   socket.on("signal", ({ roomId, data }) => {
@@ -225,6 +233,22 @@ io.on("connection", (socket) => {
       candidate: data.candidate,
       from: socket.id
     });
+  });
+
+  // Chat message handling
+  socket.on('send-message', (data) => {
+    const { roomId, message, sender, timestamp } = data;
+    const room = String(roomId);
+    console.log(`💬 Message from ${sender} in room ${room}: "${message}"`);
+
+    // Broadcast message to all users in the room (including sender for confirmation)
+    io.to(room).emit('message', {
+      text: message,
+      sender: sender,
+      timestamp: timestamp || new Date().toISOString()
+    });
+
+    console.log(`📨 Broadcasted message to room ${room}`);
   });
 
   socket.on("disconnect", () => {

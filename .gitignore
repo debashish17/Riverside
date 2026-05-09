@@ -39,3 +39,8 @@ coverage
 .claude
 rename-recordings.js
 rename-recordings.js
+
+# Uploads
+backend/uploads/
+
+/docs

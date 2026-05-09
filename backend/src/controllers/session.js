@@ -64,7 +64,7 @@ exports.createSession = async (req, res) => {
       participants: session.members.map(m => ({
         id: m.user.id,
         username: m.user.username,
-        isOwner: m.user.id === session.ownerId
+        isOwner: Number(m.user.id) === Number(session.ownerId)
       }))
     };
     
@@ -117,20 +117,20 @@ exports.joinSession = async (req, res) => {
     });
     
     if (!session) {
-      return res.status(404).json({ 
-        error: 'Session not found' 
+      return res.status(404).json({
+        error: 'Session not found. Please check the session ID and try again.'
       });
     }
-    
+
     if (session.status !== 'active') {
-      return res.status(400).json({ 
-        error: 'Session is not active' 
+      return res.status(400).json({
+        error: `This session has ended and cannot be joined. Status: ${session.status}`
       });
     }
     
     if (session.members.length >= session.maxParticipants) {
-      return res.status(400).json({ 
-        error: 'Session is full' 
+      return res.status(400).json({
+        error: `Session is full. Maximum ${session.maxParticipants} participants allowed.`
       });
     }
     
@@ -170,12 +170,30 @@ exports.joinSession = async (req, res) => {
       }
     });
     
+    // Broadcast participant update to all users in the session
+    const participantsUpdate = updatedSession.members.map(m => ({
+      id: m.user.id,
+      username: m.user.username,
+      isOwner: m.user.id === updatedSession.ownerId
+    }));
+
+    // Emit to all users in the session room
+    if (req.io) {
+      const room = String(sessionId);
+      const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+      console.log(`📡 Broadcasting user joined to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+      req.io.to(room).emit('participants-update', participantsUpdate);
+      console.log(`📡 Broadcasted participant update to session ${room} (${participantsUpdate.length} participants)`);
+    }
+
     res.json({
       success: true,
       session: {
         ...updatedSession,
         owner: updatedSession.owner.username,
-        members: updatedSession.members.map(m => m.user.username)
+        members: updatedSession.members.map(m => m.user.username),
+        participants: participantsUpdate
       },
       message: 'Joined session successfully'
     });
@@ -229,8 +247,10 @@ exports.getSession = async (req, res) => {
     }
     
     // Check if user has access to this session (owner or member)
-    const isMember = session.members.some(m => m.userId === req.user.id);
-    const isOwner = session.ownerId === req.user.id;
+    const isMember = session.members.some(m => Number(m.userId) === Number(req.user.id));
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+
+    console.log(`🔍 Get session ${sessionId} - User: ${req.user.id} (${req.user.username}), Is Owner: ${isOwner}, Is Member: ${isMember}`);
     
     if (!isMember && !isOwner) {
       return res.status(403).json({ 
@@ -242,8 +262,10 @@ exports.getSession = async (req, res) => {
     const participants = session.members.map(m => ({
       id: m.user.id,
       username: m.user.username,
-      isOwner: m.user.id === session.ownerId
+      isOwner: Number(m.user.id) === Number(session.ownerId)
     }));
+
+    console.log(`📋 Session ${sessionId} participants:`, participants.map(p => `${p.username}${p.isOwner ? ' (owner)' : ''}`).join(', '));
     
     res.json({
       success: true,
@@ -512,9 +534,11 @@ exports.endSession = async (req, res) => {
       });
     }
     
-    if (session.ownerId !== req.user.id) {
-      return res.status(403).json({ 
-        error: 'Only session owner can end the session' 
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    if (!isOwner) {
+      console.log(`❌ User ${req.user.username} (ID: ${req.user.id}) attempted to end session owned by ${session.owner.username} (ID: ${session.ownerId})`);
+      return res.status(403).json({
+        error: 'Only session owner can end the session'
       });
     }
     
@@ -587,9 +611,11 @@ exports.clearSession = async (req, res) => {
       });
     }
     
-    if (session.ownerId !== req.user.id) {
-      return res.status(403).json({ 
-        error: 'Only session owner can clear the session' 
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    if (!isOwner) {
+      console.log(`❌ User ${req.user.username} (ID: ${req.user.id}) attempted to clear session owned by ${session.owner.username} (ID: ${session.ownerId})`);
+      return res.status(403).json({
+        error: 'Only session owner can clear the session'
       });
     }
     
@@ -614,6 +640,9 @@ exports.clearSession = async (req, res) => {
 };
 
 // Smart leave session - handles both owner and member cases
+// THIS IS THE RECOMMENDED ENDPOINT TO USE FOR LEAVING SESSIONS
+// Owner: Terminates session and removes all members
+// Member: Just removes themselves from the session
 exports.smartLeaveSession = async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -643,7 +672,10 @@ exports.smartLeaveSession = async (req, res) => {
     }
     
     // Check if user is the owner
-    if (session.ownerId === req.user.id) {
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    console.log(`🔍 Leave check - User: ${req.user.id} (${req.user.username}), Session Owner: ${session.ownerId} (${session.owner.username}), Is Owner: ${isOwner}`);
+
+    if (isOwner) {
       // Owner leaving: Terminate session and remove all members
       console.log(`👑 Owner ${req.user.username} leaving session ${sessionId} - terminating for all members`);
       
@@ -664,7 +696,21 @@ exports.smartLeaveSession = async (req, res) => {
       });
       
       console.log(`🔴 Session ${sessionId} terminated by owner ${req.user.username} - all members removed`);
-      
+
+      // Broadcast session termination to all users in the room
+      if (req.io) {
+        const room = String(sessionId);
+        const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+        console.log(`📡 Attempting to broadcast to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+        req.io.to(room).emit('session-terminated', {
+          sessionId: room,
+          message: 'Session has been ended by the owner'
+        });
+        req.io.to(room).emit('participants-update', []);
+        console.log(`📡 Broadcasted session termination to session ${room}`);
+      }
+
       return res.json({
         success: true,
         session: updatedSession,
@@ -691,7 +737,7 @@ exports.smartLeaveSession = async (req, res) => {
       });
       
       console.log(`👋 User ${req.user.username} left session ${sessionId}`);
-      
+
       // Get updated session info
       const updatedSession = await prisma.session.findUnique({
         where: { id: Number(sessionId) },
@@ -714,13 +760,31 @@ exports.smartLeaveSession = async (req, res) => {
           }
         }
       });
-      
+
+      // Broadcast updated participant list to remaining users
+      const participantsUpdate = updatedSession.members.map(m => ({
+        id: m.user.id,
+        username: m.user.username,
+        isOwner: m.user.id === updatedSession.ownerId
+      }));
+
+      if (req.io) {
+        const room = String(sessionId);
+        const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+        console.log(`📡 Broadcasting member left to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+        req.io.to(room).emit('participants-update', participantsUpdate);
+        req.io.to(room).emit('user-left', { userId: req.user.id, username: req.user.username });
+        console.log(`📡 Broadcasted participant update to session ${room} (${participantsUpdate.length} remaining)`);
+      }
+
       return res.json({
         success: true,
         session: {
           ...updatedSession,
           owner: updatedSession.owner.username,
-          members: updatedSession.members.map(m => m.user.username)
+          members: updatedSession.members.map(m => m.user.username),
+          participants: participantsUpdate
         },
         message: 'Left session successfully',
         action: 'left'
@@ -736,6 +800,8 @@ exports.smartLeaveSession = async (req, res) => {
 };
 
 // Leave session - for non-owners to leave the session
+// WARNING: This endpoint allows owners to leave without terminating, creating ownerless sessions
+// DEPRECATED: Use smartLeaveSession instead
 exports.leaveSession = async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -759,35 +825,34 @@ exports.leaveSession = async (req, res) => {
     });
     
     if (!session) {
-      return res.status(404).json({ 
-        error: 'Session not found' 
+      return res.status(404).json({
+        error: 'Session not found'
       });
     }
-    
-    // Check if user is the owner
-    if (session.ownerId === req.user.id) {
-      return res.status(400).json({ 
-        error: 'Session owner cannot leave. Use end/clear session instead.',
-        suggestion: 'Use endSession to mark as ended or clearSession to delete completely'
-      });
-    }
-    
+
     // Check if user is actually a member
     const memberRecord = session.members.find(m => m.userId === req.user.id);
     if (!memberRecord) {
-      return res.status(404).json({ 
-        error: 'You are not a member of this session' 
+      return res.status(404).json({
+        error: 'You are not a member of this session'
       });
     }
-    
+
+    // Check if user is the owner
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+
     // Remove user from session members
     await prisma.sessionMember.delete({
       where: {
         id: memberRecord.id
       }
     });
-    
-    console.log(`👋 User ${req.user.username} left session ${sessionId}`);
+
+    if (isOwner) {
+      console.log(`👑 Owner ${req.user.username} left session ${sessionId} - session continues without owner`);
+    } else {
+      console.log(`👋 User ${req.user.username} left session ${sessionId}`);
+    }
     
     // Get updated session info
     const updatedSession = await prisma.session.findUnique({
@@ -811,13 +876,35 @@ exports.leaveSession = async (req, res) => {
         }
       }
     });
-    
+
+    // Broadcast updated participant list to remaining users
+    const participantsUpdate = updatedSession.members.map(m => ({
+      id: m.user.id,
+      username: m.user.username,
+      isOwner: Number(m.user.id) === Number(updatedSession.ownerId)
+    }));
+
+    if (req.io) {
+      const room = String(sessionId);
+      const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+      console.log(`📡 Broadcasting member left to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+      req.io.to(room).emit('participants-update', participantsUpdate);
+      req.io.to(room).emit('user-left', {
+        userId: req.user.id,
+        username: req.user.username,
+        wasOwner: isOwner
+      });
+      console.log(`📡 Broadcasted participant update to session ${room} (${participantsUpdate.length} remaining)`);
+    }
+
     res.json({
       success: true,
       session: {
         ...updatedSession,
         owner: updatedSession.owner.username,
-        members: updatedSession.members.map(m => m.user.username)
+        members: updatedSession.members.map(m => m.user.username),
+        participants: participantsUpdate
       },
       message: 'Left session successfully'
     });
@@ -860,9 +947,11 @@ exports.terminateSession = async (req, res) => {
     }
     
     // Only session owner can terminate
-    if (session.ownerId !== req.user.id) {
-      return res.status(403).json({ 
-        error: 'Only session owner can terminate the session' 
+    const isOwner = Number(session.ownerId) === Number(req.user.id);
+    if (!isOwner) {
+      console.log(`❌ User ${req.user.username} (ID: ${req.user.id}) attempted to terminate session owned by ${session.owner.username} (ID: ${session.ownerId})`);
+      return res.status(403).json({
+        error: 'Only session owner can terminate the session'
       });
     }
     
@@ -881,9 +970,23 @@ exports.terminateSession = async (req, res) => {
         sessionId: Number(sessionId)
       }
     });
-    
+
     console.log(`🔴 Session ${sessionId} terminated by owner ${req.user.username} - all members removed`);
-    
+
+    // Broadcast session termination to all users in the room
+    if (req.io) {
+      const room = String(sessionId);
+      const socketsInRoom = req.io.sockets.adapter.rooms.get(room);
+      console.log(`📡 Attempting to broadcast termination to room ${room} - ${socketsInRoom?.size || 0} sockets in room`);
+
+      req.io.to(room).emit('session-terminated', {
+        sessionId: room,
+        message: 'Session has been ended by the owner'
+      });
+      req.io.to(room).emit('participants-update', []);
+      console.log(`📡 Broadcasted session termination to session ${room}`);
+    }
+
     res.json({
       success: true,
       session: updatedSession,

@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import type { RootState } from '../../store';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { sessionAPI } from '../../utils/api';
+import { sessionAPI, recordingAPI } from '../../utils/api';
 import { socket } from '../../utils/socket';
 import { 
   Video, 
@@ -29,6 +29,7 @@ const SessionRoom = () => {
   const recordedChunksRef = React.useRef<Blob[]>([]);
   const streamRef = React.useRef<MediaStream | null>(null);
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const sessionRef = React.useRef<Session | null>(null);
   const { user } = useSelector((state: RootState) => state.auth);
   
   interface Participant {
@@ -38,6 +39,7 @@ const SessionRoom = () => {
   interface Session {
     id?: string;
     name?: string;
+    ownerId?: number;
     owner?: string;
     participants?: Participant[];
   }
@@ -58,6 +60,8 @@ const SessionRoom = () => {
   const [newMessage, setNewMessage] = useState('');
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   const fetchSessionData = useCallback(async (retryCount = 0) => {
     try {
@@ -68,6 +72,7 @@ const SessionRoom = () => {
 
       if (result.success) {
         setSession(result.data);
+        sessionRef.current = result.data; // Store in ref for cleanup access
         setParticipants(result.data?.participants || []);
         console.log('✅ Session loaded:', result.data?.name || `Session ${sessionId}`);
       } else {
@@ -115,29 +120,184 @@ const SessionRoom = () => {
 
     if (!socket.connected) socket.connect();
     socket.emit('join-room', { roomId: sessionId, userId: user?.id || user?.username });
-    socket.on('participants-update', setParticipants);
+
+    // Handle real-time participant updates
+    socket.on('participants-update', (updatedParticipants) => {
+      console.log('👥 Participants updated:', updatedParticipants);
+      setParticipants(updatedParticipants);
+    });
+
+    // Handle user joined event
+    socket.on('user-joined', (data) => {
+      console.log('👤 User joined:', data);
+    });
+
+    // Handle user left event
+    socket.on('user-left', (data) => {
+      console.log('👋 User left:', data);
+    });
+
+    // Handle session termination by owner
+    socket.on('session-terminated', async (data) => {
+      console.log('🔴 Session terminated by owner:', data);
+
+      // Stop recording and upload before redirecting
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+
+        // Wait for recording to stop and upload
+        await new Promise<void>((resolve) => {
+          if (!mediaRecorderRef.current) {
+            resolve();
+            return;
+          }
+
+          mediaRecorderRef.current.onstop = async () => {
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+
+            if (blob.size === 0) {
+              console.log('⚠️ No recording data to upload');
+              resolve();
+              return;
+            }
+
+            const currentSession = sessionRef.current;
+            const currentSessionId = sessionId || currentSession?.id;
+            const currentSessionName = currentSession?.name || `Session ${currentSessionId || 'unknown'}`;
+            const useChunkedUpload = blob.size > 10 * 1024 * 1024;
+
+            try {
+              setIsUploading(true);
+              console.log(`📤 Uploading recording after termination (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
+
+              if (useChunkedUpload) {
+                const result = await recordingAPI.uploadRecordingChunked(
+                  blob,
+                  { sessionId: currentSessionId || '', sessionName: currentSessionName },
+                  (progress) => setUploadProgress(progress)
+                );
+                if (result.success) console.log('✅ Recording uploaded successfully');
+              } else {
+                const formData = new FormData();
+                formData.append('recording', blob, `session-${currentSessionId || 'unknown'}-${Date.now()}.webm`);
+                formData.append('sessionId', currentSessionId || '');
+                formData.append('sessionName', currentSessionName);
+
+                const response = await fetch('/api/recordings/upload', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                  body: formData
+                });
+
+                if (response.ok) console.log('✅ Recording uploaded successfully');
+              }
+            } catch (error) {
+              console.error('❌ Failed to upload recording:', error);
+            } finally {
+              setIsUploading(false);
+              setUploadProgress(0);
+              resolve();
+            }
+          };
+        });
+      }
+
+      // Cleanup and redirect
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      socket.disconnect();
+      navigate('/dashboard');
+    });
+
     socket.on('message', (msg) => setMessages((prev) => [...prev, msg]));
 
     return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-        mediaRecorderRef.current.onstop = async () => {
-          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-          try {
-            const formData = new FormData();
-            formData.append('recording', blob, `session-${sessionId || 'unknown'}-${Date.now()}.webm`);
-            formData.append('sessionId', sessionId || '');
-            formData.append('sessionName', session?.name || `Session ${sessionId || 'unknown'}`);
-            await fetch('/api/recordings/upload', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-              body: formData
-            });
-          } catch (error) {
-            console.error('Failed to upload recording:', error);
-          }
-        };
-      }
+      const uploadRecording = async () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+
+          // Wait for recorder to stop and then upload
+          await new Promise<void>((resolve) => {
+            if (!mediaRecorderRef.current) {
+              resolve();
+              return;
+            }
+
+            mediaRecorderRef.current.onstop = async () => {
+              const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+
+              if (blob.size === 0) {
+                console.log('⚠️ No recording data to upload');
+                resolve();
+                return;
+              }
+
+              // Use sessionRef to get session data (avoids closure issues)
+              const currentSession = sessionRef.current;
+              const currentSessionId = sessionId || currentSession?.id;
+              const currentSessionName = currentSession?.name || `Session ${currentSessionId || 'unknown'}`;
+
+              // Use chunked upload for files larger than 10MB, otherwise use regular upload
+              const useChunkedUpload = blob.size > 10 * 1024 * 1024; // 10MB threshold
+
+              try {
+                setIsUploading(true);
+                console.log(`📤 Uploading recording (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
+
+                if (useChunkedUpload) {
+                  // Use chunked upload for large files
+                  const result = await recordingAPI.uploadRecordingChunked(
+                    blob,
+                    {
+                      sessionId: currentSessionId || '',
+                      sessionName: currentSessionName
+                    },
+                    (progress, current, total) => {
+                      setUploadProgress(progress);
+                      console.log(`📤 Upload progress: ${progress}% (chunk ${current}/${total})`);
+                    }
+                  );
+
+                  if (result.success) {
+                    console.log('✅ Recording uploaded successfully (chunked)');
+                  } else {
+                    console.error('❌ Chunked upload failed:', result.error);
+                  }
+                } else {
+                  // Use direct upload for smaller files
+                  const formData = new FormData();
+                  formData.append('recording', blob, `session-${currentSessionId || 'unknown'}-${Date.now()}.webm`);
+                  formData.append('sessionId', currentSessionId || '');
+                  formData.append('sessionName', currentSessionName);
+
+                  const response = await fetch('/api/recordings/upload', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                    body: formData
+                  });
+
+                  if (response.ok) {
+                    console.log('✅ Recording uploaded successfully (direct)');
+                  } else {
+                    console.error('❌ Direct upload failed:', await response.text());
+                  }
+                }
+              } catch (error) {
+                console.error('❌ Failed to upload recording:', error);
+              } finally {
+                setIsUploading(false);
+                setUploadProgress(0);
+                resolve();
+              }
+            };
+          });
+        }
+      };
+
+      // Execute upload
+      uploadRecording();
 
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -145,6 +305,12 @@ const SessionRoom = () => {
         streamRef.current = null;
       }
 
+      // Clean up socket event listeners
+      socket.off('participants-update');
+      socket.off('user-joined');
+      socket.off('user-left');
+      socket.off('session-terminated');
+      socket.off('message');
       socket.disconnect();
     };
   }, [sessionId, isRecording, user]);
@@ -195,41 +361,133 @@ const SessionRoom = () => {
     setShowLeaveModal(true);
   };
 
-  const confirmLeaveSession = async () => {
-    setShowLeaveModal(false);
-    
+  const uploadRecordingBeforeExit = async () => {
+    // Stop recording and upload
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+
+      // Wait for recording to stop and upload
+      await new Promise<void>((resolve) => {
+        if (!mediaRecorderRef.current) {
+          resolve();
+          return;
+        }
+
+        mediaRecorderRef.current.onstop = async () => {
+          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+
+          if (blob.size === 0) {
+            console.log('⚠️ No recording data to upload');
+            resolve();
+            return;
+          }
+
+          const currentSession = sessionRef.current;
+          const currentSessionId = sessionId || currentSession?.id;
+          const currentSessionName = currentSession?.name || `Session ${currentSessionId || 'unknown'}`;
+
+          const useChunkedUpload = blob.size > 10 * 1024 * 1024;
+
+          try {
+            setIsUploading(true);
+            console.log(`📤 Uploading recording (${(blob.size / 1024 / 1024).toFixed(2)} MB, ${useChunkedUpload ? 'chunked' : 'direct'} upload)...`);
+
+            if (useChunkedUpload) {
+              const result = await recordingAPI.uploadRecordingChunked(
+                blob,
+                {
+                  sessionId: currentSessionId || '',
+                  sessionName: currentSessionName
+                },
+                (progress, current, total) => {
+                  setUploadProgress(progress);
+                  console.log(`📤 Upload progress: ${progress}% (chunk ${current}/${total})`);
+                }
+              );
+
+              if (result.success) {
+                console.log('✅ Recording uploaded successfully (chunked)');
+              } else {
+                console.error('❌ Chunked upload failed:', result.error);
+              }
+            } else {
+              const formData = new FormData();
+              formData.append('recording', blob, `session-${currentSessionId || 'unknown'}-${Date.now()}.webm`);
+              formData.append('sessionId', currentSessionId || '');
+              formData.append('sessionName', currentSessionName);
+
+              const response = await fetch('/api/recordings/upload', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                body: formData
+              });
+
+              if (response.ok) {
+                console.log('✅ Recording uploaded successfully (direct)');
+              } else {
+                console.error('❌ Direct upload failed:', await response.text());
+              }
+            }
+          } catch (error) {
+            console.error('❌ Failed to upload recording:', error);
+          } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
+            resolve();
+          }
+        };
+      });
+    }
+  };
+
+  const cleanupAndNavigate = () => {
+    // Clean up streams
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
       streamRef.current = null;
     }
-    
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    
+
+    // Clean up socket and navigate
+    socket.off('participants-update');
+    socket.off('user-joined');
+    socket.off('user-left');
+    socket.off('session-terminated');
+    socket.off('message');
+    socket.disconnect();
+    navigate('/dashboard');
+  };
+
+  const confirmLeaveSession = async () => {
+    setShowLeaveModal(false);
+
+    await uploadRecordingBeforeExit();
+
     socket.emit('leave-room', { roomId: sessionId, userId: user?.id || user?.username });
 
     try {
-      // Use leaveSession if not owner, or endSession if owner
-      const isOwner = session?.owner === user?.username;
-      const result = isOwner
-        ? await sessionAPI.endSession(sessionId || '')
-        : await sessionAPI.leaveSession(sessionId || '');
+      // Use smart-leave endpoint - handles both owner and member cases
+      // Owner: terminates session for everyone
+      // Member: just leaves the session
+      const result = await sessionAPI.smartLeaveSession(sessionId || '');
 
       if (result.success) {
-        if (isOwner) {
-          socket.emit('session-terminated', { sessionId, terminatedBy: user?.id });
+        const action = result.action;
+        if (action === 'terminated') {
+          console.log('👑 Session terminated successfully (owner left)');
+        } else if (action === 'left') {
+          console.log('👤 Left session successfully (member left)');
         } else {
-          socket.emit('user-left-session', { sessionId, userId: user?.id });
+          console.log('✅ Left session successfully');
         }
+      } else {
+        console.error('Failed to leave session:', result.error);
       }
     } catch (error) {
       console.error('Error leaving session:', error);
     }
 
-    socket.disconnect();
-    navigate('/dashboard');
+    cleanupAndNavigate();
   };
 
   const cancelLeaveSession = () => {
@@ -240,6 +498,19 @@ const SessionRoom = () => {
     navigator.clipboard.writeText(sessionId || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSendMessage = () => {
+    if (newMessage.trim() === '') return;
+
+    socket.emit('send-message', {
+      roomId: sessionId,
+      message: newMessage,
+      sender: user?.username || 'Anonymous',
+      timestamp: new Date().toISOString()
+    });
+
+    setNewMessage('');
   };
 
   // Calculate grid layout based on participant count
@@ -450,10 +721,14 @@ const SessionRoom = () => {
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                   placeholder="Type a message..."
                   className="flex-1 px-4 py-2.5 bg-zinc-800/50 border border-zinc-700/50 text-white placeholder-zinc-600 rounded-lg focus:outline-none focus:border-zinc-600 transition-all text-sm"
                 />
-                <button className="p-2.5 bg-white text-black rounded-lg hover:bg-zinc-100 transition-all">
+                <button
+                  onClick={handleSendMessage}
+                  className="p-2.5 bg-white text-black rounded-lg hover:bg-zinc-100 transition-all"
+                >
                   <Send className="w-5 h-5" strokeWidth={2} />
                 </button>
               </div>
@@ -538,7 +813,7 @@ const SessionRoom = () => {
           <button
             onClick={handleLeaveSession}
             className="group relative p-4 bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30 rounded-xl transition-all ml-2"
-            title={session?.owner === user?.username ? 'End Session (Owner)' : 'Leave Session'}
+            title={session?.ownerId === user?.id ? 'Leave & Terminate Session' : 'Leave Session'}
           >
             <Phone className="w-5 h-5 transform rotate-[135deg]" strokeWidth={2} />
           </button>
@@ -552,12 +827,12 @@ const SessionRoom = () => {
             <div className="absolute -inset-0.5 bg-gradient-to-r from-red-500/20 to-orange-500/20 rounded-2xl blur"></div>
             <div className="relative bg-zinc-900 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="text-xl font-medium text-white mb-3">
-                {session?.owner === user?.username ? 'End Session' : 'Leave Session'}
+                {session?.ownerId === user?.id ? 'Leave & Terminate Session' : 'Leave Session'}
               </h3>
               <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-                {session?.owner === user?.username 
-                  ? 'As the session owner, ending the session will remove all participants and terminate the session for everyone. This action cannot be undone.'
-                  : 'Are you sure you want to leave this session? You can rejoin using the session ID if needed.'
+                {session?.ownerId === user?.id
+                  ? 'You are the session owner. Leaving will terminate the session for all participants. Their recordings will be saved automatically.'
+                  : 'Are you sure you want to leave this session? Your recording will be saved. You can rejoin using the session ID if the session is still active.'
                 }
               </p>
               <div className="flex gap-3">
@@ -569,14 +844,38 @@ const SessionRoom = () => {
                 </button>
                 <button
                   onClick={confirmLeaveSession}
-                  className={`flex-1 px-4 py-3 text-white rounded-xl transition-all font-medium ${
-                    session?.owner === user?.username
-                      ? 'bg-orange-500 hover:bg-orange-600'
-                      : 'bg-red-500 hover:bg-red-600'
-                  }`}
+                  className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all font-medium"
                 >
-                  {session?.owner === user?.username ? 'End Session' : 'Leave Session'}
+                  {session?.ownerId === user?.id ? 'Leave & Terminate' : 'Leave Session'}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Progress Modal */}
+      {isUploading && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="relative max-w-md w-full mx-4">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-2xl blur"></div>
+            <div className="relative bg-zinc-900 border border-zinc-800/50 rounded-2xl p-6">
+              <h3 className="text-xl font-medium text-white mb-4">Uploading Recording</h3>
+              <p className="text-sm text-zinc-400 mb-4">
+                Please wait while your recording is being uploaded...
+              </p>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-zinc-800 rounded-full h-3 mb-3 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 ease-out rounded-full"
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Progress</span>
+                <span className="text-white font-medium">{uploadProgress}%</span>
               </div>
             </div>
           </div>
